@@ -1,0 +1,11 @@
+# Generated image/build data (never track disk images in Git).
+/build/
+/reference/images/*.img
+/reference/images/*.img.*
+/reference/images/*.img-*
+
+# Logs and temporary files
+*.log
+*.tmp
+*.new
+*.sha256

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Archivos
+Comment=Explorar carpetas y documentos
+Exec=thunar
+Icon=system-file-manager
+Terminal=false
+Categories=System;FileManager;

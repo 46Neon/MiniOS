@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+ROOT_UUID='@ROOT_UUID@'
+KERNEL_FILE="$(find /boot -maxdepth 1 -type f -name 'vmlinuz-*' -printf '%f\n' | sort -V | tail -n 1)"
+[ -n "$KERNEL_FILE" ] || exit 0
+VERSION="${KERNEL_FILE#vmlinuz-}"
+INITRD_FILE="initrd.img-$VERSION"
+[ -f "/boot/$INITRD_FILE" ] || exit 0
+cat <<EOF
+menuentry 'Iniciar MiniAriño' --class miniarino {
+    search --no-floppy --fs-uuid --set=root $ROOT_UUID
+    linux /boot/$KERNEL_FILE root=UUID=$ROOT_UUID ro systemd.show_status=true console=tty0 console=ttyS0,115200n8
+    initrd /boot/$INITRD_FILE
+}
+menuentry 'Reiniciar' --class reboot {
+    reboot
+}
+menuentry 'Apagar' --class shutdown {
+    halt
+}
+EOF

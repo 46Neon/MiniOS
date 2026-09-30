@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Instalar programas
+Comment=Gestionar paquetes Debian con Synaptic
+Exec=synaptic-pkexec
+Icon=system-software-install
+Terminal=false
+Categories=System;PackageManager;

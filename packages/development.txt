@@ -1,0 +1,9 @@
+bash
+build-essential
+git
+python3
+python3-pip
+curl
+wget
+unzip
+zip

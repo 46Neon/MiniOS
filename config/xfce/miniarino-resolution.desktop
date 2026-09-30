@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=MiniAriño resolution setup
+Exec=/usr/local/bin/miniarino-set-display-mode
+OnlyShowIn=XFCE;
+X-GNOME-Autostart-enabled=true
