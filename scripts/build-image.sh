@@ -163,6 +163,7 @@ if [[ -f "$OUT" ]]; then
 fi
 mv -- "$TMP" "$OUT"
 # The build may have escalated through sudo; QEMU and artifact upload run as the invoking user.
+chmod 0755 "$OUT_DIR"
 chmod 0644 "$OUT"
 sha256sum "$OUT"
 printf 'Imagen construida: %s\n' "$OUT"
