@@ -24,8 +24,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            debootstrap util-linux e2fsprogs qemu-system-x86 qemu-utils \
-            ca-certificates curl gzip python3
+            debootstrap debian-archive-keyring util-linux e2fsprogs \
+            qemu-system-x86 qemu-utils ca-certificates curl gzip python3
 
       - name: Build fresh image
         run: |

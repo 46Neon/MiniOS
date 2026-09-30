@@ -18,7 +18,7 @@ El repositorio MiniOS auditado no incluía la `os.img` que Lennd había probado 
 
 ## Construcción
 
-La construcción requiere un host Linux amd64 con acceso root, `debootstrap`, `sfdisk`, `losetup`, `mkfs.ext4`, `mount`, `chroot` y red. **Termux en Android ARM se usa para ejecutar la VM, no para construir su filesystem**: el workflow de GitHub Actions es la vía recomendada.
+La construcción requiere un host Linux amd64 con acceso root, `debootstrap`, el paquete `debian-archive-keyring`, `sfdisk`, `losetup`, `mkfs.ext4`, `mount`, `chroot` y red. **Termux en Android ARM se usa para ejecutar la VM, no para construir su filesystem**: el workflow de GitHub Actions es la vía recomendada.
 
 ```sh
 make clean && make

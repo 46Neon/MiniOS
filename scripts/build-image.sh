@@ -12,11 +12,12 @@ MNT="$WORK/root"
 SUITE="${DEBIAN_SUITE:-trixie}"
 IMAGE_SIZE="16G" # Fixed together with the MBR partition geometry and verifier.
 DEFAULT_PASSWORD="${MINIARINO_PASSWORD:-miniarino}"
+DEBIAN_KEYRING="${DEBIAN_KEYRING:-/usr/share/keyrings/debian-archive-keyring.gpg}"
 LOOP=""
 
 if (( EUID != 0 )); then
   if command -v sudo >/dev/null 2>&1; then
-    exec sudo -E env DEBIAN_SUITE="$SUITE" MINIARINO_PASSWORD="$DEFAULT_PASSWORD" "$0" "$OUT"
+    exec sudo -E env DEBIAN_SUITE="$SUITE" DEBIAN_KEYRING="$DEBIAN_KEYRING" MINIARINO_PASSWORD="$DEFAULT_PASSWORD" "$0" "$OUT"
   fi
   echo "La creación de la imagen necesita root y los dispositivos loop." >&2
   exit 1
@@ -25,6 +26,7 @@ fi
 for cmd in debootstrap sfdisk losetup mkfs.ext4 mount umount chroot blkid sha256sum; do
   command -v "$cmd" >/dev/null || { echo "Falta la herramienta del constructor: $cmd" >&2; exit 1; }
 done
+[[ -r "$DEBIAN_KEYRING" ]] || { echo "Falta el keyring Debian verificado del host: $DEBIAN_KEYRING" >&2; exit 1; }
 [[ "$(dpkg --print-architecture)" = amd64 ]] || { echo "Construye en un host Linux amd64; Termux/ARM no sirve para debootstrap amd64 nativo." >&2; exit 1; }
 [[ -n "$DEFAULT_PASSWORD" ]] || { echo "MINIARINO_PASSWORD no puede estar vacía." >&2; exit 1; }
 
@@ -61,7 +63,7 @@ mkfs.ext4 -F -L MINIARINO_ROOT "$PART"
 mount "$PART" "$MNT"
 
 DEBIAN_MIRROR="${DEBIAN_MIRROR:-http://deb.debian.org/debian}"
-debootstrap --arch=amd64 --variant=minbase "$SUITE" "$MNT" "$DEBIAN_MIRROR"
+debootstrap --keyring="$DEBIAN_KEYRING" --include=ca-certificates --arch=amd64 --variant=minbase "$SUITE" "$MNT" "$DEBIAN_MIRROR"
 rm -f "$MNT/etc/apt/sources.list"
 
 cat > "$MNT/etc/apt/sources.list.d/debian.sources" <<EOF
