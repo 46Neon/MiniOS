@@ -35,12 +35,14 @@ jobs:
       - name: Verify image structure
         run: make verify
 
-      - name: Make the built image readable to the QEMU test user
+      - name: Make the built image readable and writable to the QEMU test user
         run: |
           sudo chmod 0755 build
-          sudo chmod 0644 build/os.img
+          sudo chown "$(id -u):$(id -g)" build/os.img
+          chmod 0644 build/os.img
           stat -c '%A %a %U:%G %n' build build/os.img
           test -r build/os.img
+          test -w build/os.img
 
       - name: Boot smoke test in BIOS/SeaBIOS QEMU
         run: scripts/smoke-qemu.sh
