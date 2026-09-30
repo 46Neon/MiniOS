@@ -25,7 +25,7 @@ Los logs y el SHA del commit probado deben guardarse junto al resultado de CI. L
 
 En un QEMU gráfico de x86-64, adjuntar la imagen raw como IDE y arrancar en BIOS/SeaBIOS:
 
-- [ ] Aparece el menú GRUB con «Iniciar MiniAriño», «Reiniciar» y «Apagar»; seleccionar el primer elemento inicia Linux automáticamente al vencer el timeout.
+- [ ] Aparece el menú GRUB con «Iniciar MiniAriño», «Reiniciar» y «Apagar»; seleccionar la primera opción e indicar Enter inicia Linux.
 - [ ] Aparece «MiniAriño bienvenido» durante el arranque.
 - [ ] Se inicia LightDM/XFCE sin pedir una cuenta, a 640×480 si el adaptador anuncia ese modo; si no, el escritorio permanece utilizable con el modo anunciado por QEMU.
 - [ ] Se ve el fondo y los accesos directos de Archivos, Terminal, Navegador web e Instalar programas.

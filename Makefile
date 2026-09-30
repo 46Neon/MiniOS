@@ -6,6 +6,7 @@ all: image
 
 # The image is intentionally rebuilt on every invocation, including after clean.
 image:
+	mkdir -p build
 	./scripts/build-image.sh "$(IMAGE)"
 
 verify:

@@ -159,7 +159,10 @@ if [[ -f "$OUT" ]]; then
   OLD_HASH="$(sha256sum "$OUT" | awk '{print $1}')"
   ARCHIVE="$ROOT/reference/images/os.img-$OLD_HASH"
   if [[ ! -e "$ARCHIVE" ]]; then mv -- "$OUT" "$ARCHIVE"; fi
+  chmod 0644 "$ARCHIVE"
 fi
 mv -- "$TMP" "$OUT"
+# The build may have escalated through sudo; QEMU and artifact upload run as the invoking user.
+chmod 0644 "$OUT"
 sha256sum "$OUT"
 printf 'Imagen construida: %s\n' "$OUT"
