@@ -1,8 +1,6 @@
 name: Build MiniAriño image
 
 on:
-  push:
-    branches: [linux-foundation]
   pull_request:
     branches: [main]
   workflow_dispatch:
