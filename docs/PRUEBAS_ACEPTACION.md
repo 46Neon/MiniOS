@@ -18,10 +18,10 @@ La imagen de CI debe superar, en ese orden:
 1. Construcción reproducible con Debian 13 `trixie` amd64, filesystem raíz ext4 y GRUB BIOS en MBR.
 2. Verificación de tamaño raw lógico de 16 GiB, firma MBR `55 AA`, una partición Linux que empieza en LBA 2048, estructura del filesystem, módulos GRUB BIOS, kernel, initramfs, paquetes/binarios XFCE, LightDM/autologin/sesión, enlaces de servicios, wallpaper/configuración, directorios personales, launchers y comandos instalados, configuración del saludo y exactamente tres entradas de menú.
 3. Inicio en QEMU `pc`/SeaBIOS con el disco como IDE, aceleración TCG y VGA estándar; la consola serial debe recibir `MiniAriño bienvenido` dentro del límite de tiempo.
-4. Inicio de un segundo QEMU con salida VGA VNC local, espera de la sesión gráfica y captura de la pantalla mediante el monitor QEMU; la captura y la consola serial se guardan como diagnóstico para revisión visual.
+4. Inicio de un segundo QEMU con VGA/VNC, captura de XFCE y envío de la combinación Ctrl+Alt+M al teclado emulado; esto abre el terminal con el autodiagnóstico ejecutándose dentro de la sesión del usuario. El runner debe apagar limpiamente la VM, extraer el log y exigir `0 FAIL`.
 5. Solo después de los anteriores, compresión `.img.gz`, generación de SHA-256 y subida del artefacto de imagen. Cualquier fallo impide publicar ese artefacto.
 
-Los logs, la captura y el SHA del commit probado deben guardarse junto al resultado de CI. La captura permite revisar si se ve XFCE, pero no prueba teclado, ratón, navegación, instalación de paquetes ni uso en Termux.
+Los logs del autodiagnóstico, las capturas de antes y durante la prueba, la consola serial y el SHA del commit probado deben guardarse junto al resultado de CI. Esto verifica X11, D-Bus, procesos XFCE, EWMH, Xfconf y comandos desde la sesión gráfica; todavía no prueba ratón, navegación real, instalación de paquetes ni uso en Termux.
 
 ## Manual — escritorio QEMU
 
@@ -31,7 +31,7 @@ En un QEMU gráfico de x86-64, adjuntar la imagen raw como IDE y arrancar en BIO
 - [ ] Aparece «MiniAriño bienvenido» durante el arranque.
 - [ ] Se inicia LightDM/XFCE sin pedir una cuenta, a 640×480 si el adaptador anuncia ese modo; si no, el escritorio permanece utilizable con el modo anunciado por QEMU.
 - [ ] Se ve el fondo y los accesos directos de Archivos, Terminal, Navegador web, Instalar programas y Diagnóstico MiniAriño.
-- [ ] Ejecutar «Diagnóstico MiniAriño» en la sesión como usuario normal; revisar el resumen PASS/FAIL/WARN y que el canal/archivos temporales de la prueba se limpien. Este test del sistema instalado es inspirado por categorías upstream, pero no ejecuta los binarios de pruebas internos de Xfce.
+- [ ] Ejecutar «Diagnóstico MiniAriño» en la sesión como usuario normal o usar Ctrl+Alt+M; revisar el resumen PASS/FAIL/WARN y el log `~/.cache/miniarino-selftest/last.log`. El canal/archivos de prueba temporales deben limpiarse. Esta prueba de sistema se inspira en categorías upstream, pero no ejecuta los binarios internos de Xfce.
 - [ ] Teclado y ratón funcionan; abrir Thunar y navegar por las carpetas personales.
 - [ ] Abrir XFCE Terminal y ejecutar comandos locales; abrir Firefox ESR y cargar un sitio usando la red emulada.
 - [ ] Abrir Synaptic/GDebi y confirmar que el gestor puede consultar repositorios e instalar un paquete Debian de prueba.

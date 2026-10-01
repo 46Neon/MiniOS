@@ -126,6 +126,17 @@ def main() -> int:
     check("User XFCE configuration selects MiniAriño wallpaper", wallpaper_config_ok)
     check("XFCE skeleton configuration installed", path("/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml").is_file())
 
+    shortcut_file = path("/home/miniarino/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-keyboard-shortcuts.xml")
+    shortcut_ok = False
+    try:
+        shortcut_root = ET.parse(shortcut_file).getroot()
+        shortcut = shortcut_root.find(".//property[@name='<Primary><Alt>m']")
+        shortcut_ok = shortcut is not None and "miniarino-selftest" in shortcut.get("value", "")
+    except (OSError, ET.ParseError):
+        pass
+    check("Ctrl+Alt+M shortcut launches the MiniAriño diagnostic", shortcut_ok)
+    check("XFCE keyboard-shortcut skeleton installed", path("/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-keyboard-shortcuts.xml").is_file())
+
     uid = int(account[2]) if account and account[2].isdigit() else -1
     gid = int(account[3]) if account and account[3].isdigit() else -1
     for folder in ("Desktop", "Documents", "Downloads", "Pictures"):

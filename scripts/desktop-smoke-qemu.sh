@@ -12,7 +12,14 @@ QEMU_LOG="$WORK/qemu.log"
 MONITOR="$WORK/monitor.sock"
 PPM="$WORK/desktop.ppm"
 PNG="$WORK/desktop.png"
-rm -f "$SERIAL" "$QEMU_LOG" "$MONITOR" "$PPM" "$PNG"
+SELFTEST_PPM="$WORK/selftest.ppm"
+SELFTEST_PNG="$WORK/selftest.png"
+SELFTEST_LOG="$WORK/selftest.log"
+SELFTEST_EXIT="$WORK/selftest.exitcode"
+MOUNT="$WORK/rootfs"
+LOOP=""
+rm -f "$SERIAL" "$QEMU_LOG" "$MONITOR" "$PPM" "$PNG" "$SELFTEST_PPM" "$SELFTEST_PNG" "$SELFTEST_LOG" "$SELFTEST_EXIT"
+mkdir -p "$MOUNT"
 
 qemu-system-x86_64 \
   -machine pc -accel tcg,thread=multi -m 2048 -smp 2 -cpu max \
@@ -23,8 +30,16 @@ qemu-system-x86_64 \
   -monitor "unix:$MONITOR,server=on,wait=off" \
   -no-reboot -no-shutdown >"$QEMU_LOG" 2>&1 &
 PID=$!
+stop_qemu() {
+  set +e
+  kill "$PID" 2>/dev/null
+  wait "$PID" 2>/dev/null
+  set -e
+}
 cleanup() {
   set +e
+  mountpoint -q "$MOUNT" && sudo -n umount "$MOUNT"
+  [[ -n "$LOOP" ]] && sudo -n losetup -d "$LOOP"
   kill "$PID" 2>/dev/null
   wait "$PID" 2>/dev/null
 }
@@ -99,3 +114,69 @@ for needle in ('lightdm.service', 'xfce'):
 if unique < 8:
     raise SystemExit('La captura está vacía o casi sin contenido gráfico.')
 PY
+
+# Trigger the in-session diagnostic using the configured Ctrl+Alt+M shortcut.
+# This exercises real keyboard input and runs the checks with the user's X11,
+# D-Bus and XFCE environment rather than in a host chroot.
+python3 - "$MONITOR" "$SELFTEST_PPM" <<'PY'
+import socket, sys, time
+sock_path, screenshot = sys.argv[1:]
+s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM); s.settimeout(5); s.connect(sock_path)
+def prompt(timeout=10):
+    data=bytearray(); deadline=time.time()+timeout
+    while time.time()<deadline:
+        try: part=s.recv(4096)
+        except socket.timeout: continue
+        if not part: break
+        data.extend(part)
+        if b'(qemu)' in data: return bytes(data)
+    raise RuntimeError('QEMU monitor prompt timeout: '+data.decode(errors='replace'))
+def command(text, timeout=10):
+    s.sendall((text+'\n').encode()); return prompt(timeout)
+prompt()
+command('sendkey ctrl-alt-m')
+# The diagnostic checks versions, services, X11/D-Bus and Xfconf, then saves a
+# full report under the miniarino user's cache directory.
+time.sleep(25)
+result=command(f'screendump {screenshot}')
+if b'Error' in result or b'failed' in result.lower(): raise RuntimeError(result.decode(errors='replace'))
+command('system_powerdown')
+end=time.time()+60
+while time.time()<end:
+    state=command('info status').lower()
+    if b'shutdown' in state: break
+    time.sleep(1)
+else:
+    raise RuntimeError('El sistema no se apagó limpiamente tras la prueba del escritorio')
+s.close()
+PY
+
+python3 - "$SELFTEST_PPM" "$SELFTEST_PNG" <<'PY'
+from PIL import Image
+import sys
+im=Image.open(sys.argv[1]).convert('RGB')
+if im.width < 320 or im.height < 200: raise SystemExit(f'Captura del diagnóstico inválida: {im.size}')
+im.save(sys.argv[2])
+print(f'Captura durante el autodiagnóstico: {sys.argv[2]} ({im.width}x{im.height})')
+PY
+
+# QEMU has received the guest's clean ACPI shutdown; stop its paused process and
+# read the report from the image for an actual pass/fail gate.
+stop_qemu
+LOOP="$(sudo -n losetup --find --show --partscan --read-only "$IMG")"
+PART="${LOOP}p1"
+for _ in $(seq 1 30); do [[ -b "$PART" ]] && break; sleep 1; done
+[[ -b "$PART" ]] || { echo "No se pudo abrir la partición para leer el autodiagnóstico: $PART" >&2; exit 1; }
+sudo -n mount -o ro,noload "$PART" "$MOUNT"
+sudo -n cat "$MOUNT/home/miniarino/.cache/miniarino-selftest/last.log" > "$SELFTEST_LOG"
+sudo -n cat "$MOUNT/home/miniarino/.cache/miniarino-selftest/last.exitcode" > "$SELFTEST_EXIT"
+sudo -n umount "$MOUNT"
+sudo -n losetup -d "$LOOP"
+LOOP=""
+cat "$SELFTEST_LOG"
+if [[ "$(tr -d '[:space:]' < "$SELFTEST_EXIT")" != 0 ]] \
+   || ! grep -Eq 'Resumen: [0-9]+ PASS, 0 FAIL, [0-9]+ WARN' "$SELFTEST_LOG"; then
+  echo "El autodiagnóstico dentro de MiniAriño no pasó; revisa $SELFTEST_LOG." >&2
+  exit 1
+fi
+printf 'OK: autodiagnóstico XFCE ejecutado dentro de la sesión gráfica.\n'

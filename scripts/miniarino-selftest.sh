@@ -6,6 +6,11 @@ PASS=0
 FAIL=0
 WARN=0
 UID_NUM="$(id -u)"
+LOG_DIR="$HOME/.cache/miniarino-selftest"
+mkdir -p "$LOG_DIR" || { echo 'No se pudo crear el registro del autodiagnóstico.' >&2; exit 2; }
+LOG_FILE="$LOG_DIR/last.log"
+EXIT_FILE="$LOG_DIR/last.exitcode"
+exec > >(tee "$LOG_FILE") 2>&1
 CHANNEL="miniarino-selftest-$$"
 PROPERTY='/runtime/roundtrip'
 CHANNEL_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/xfce4/xfconf/xfce-perchannel-xml/${CHANNEL}.xml"
@@ -28,6 +33,7 @@ cleanup() {
   if [[ -n "$TMPDIR_TEST" && "$TMPDIR_TEST" == "${XDG_RUNTIME_DIR:-$HOME}"/miniarino-test.* ]]; then
     rm -rf -- "$TMPDIR_TEST"
   fi
+  sync
 }
 trap cleanup EXIT
 trap 'exit 129' HUP
@@ -189,4 +195,8 @@ check 'Nmap disponible' nmap --version
 check 'NetworkManager responde a nmcli' nmcli general status
 
 printf '\nResumen: %d PASS, %d FAIL, %d WARN\n' "$PASS" "$FAIL" "$WARN"
-if (( FAIL > 0 )); then exit 1; fi
+RESULT=0
+if (( FAIL > 0 )); then RESULT=1; fi
+printf '%s\n' "$RESULT" > "$EXIT_FILE"
+sync
+exit "$RESULT"
