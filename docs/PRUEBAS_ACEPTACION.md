@@ -1,6 +1,6 @@
 # Pruebas de aceptación MiniAriño
 
-Este plan distingue controles automatizados de validación visual. Un artefacto no se considera terminado hasta que se construye desde cero, sus comprobaciones y el arranque QEMU pasan para el mismo commit y alguien prueba la interfaz con QEMU en Termux. No se afirma que la prueba visual haya ocurrido solo porque compile el sistema.
+Este plan distingue controles automatizados de validación visual e interacción manual. Un artefacto no se considera terminado hasta que se construye desde cero, sus comprobaciones y las capturas de escritorio en QEMU pasan para el mismo commit; la interacción real en Termux sigue siendo una prueba separada. No se afirma que la interacción en el teléfono haya ocurrido solo porque compile o arranque el sistema.
 
 ## Automatizadas — Linux amd64 / GitHub Actions
 
@@ -10,6 +10,7 @@ Ejecutar desde la raíz:
 make clean && make
 make verify
 scripts/smoke-qemu.sh
+scripts/desktop-smoke-qemu.sh
 ```
 
 La imagen de CI debe superar, en ese orden:
@@ -17,9 +18,10 @@ La imagen de CI debe superar, en ese orden:
 1. Construcción reproducible con Debian 13 `trixie` amd64, filesystem raíz ext4 y GRUB BIOS en MBR.
 2. Verificación de tamaño raw lógico de 16 GiB, firma MBR `55 AA`, una partición Linux que empieza en LBA 2048, estructura del filesystem, módulos GRUB BIOS, kernel, initramfs, XFCE, Firefox ESR, configuración del saludo y exactamente tres entradas de menú.
 3. Inicio en QEMU `pc`/SeaBIOS con el disco como IDE, aceleración TCG y VGA estándar; la consola serial debe recibir `MiniAriño bienvenido` dentro del límite de tiempo.
-4. Solo después de los anteriores, compresión `.img.gz`, generación de SHA-256 y subida del artefacto de CI. Cualquier fallo impide publicar ese artefacto.
+4. Inicio de un segundo QEMU con salida VGA VNC local, espera de la sesión gráfica y captura de la pantalla mediante el monitor QEMU; la captura y la consola serial se guardan como diagnóstico para revisión visual.
+5. Solo después de los anteriores, compresión `.img.gz`, generación de SHA-256 y subida del artefacto de imagen. Cualquier fallo impide publicar ese artefacto.
 
-Los logs y el SHA del commit probado deben guardarse junto al resultado de CI. Los checks estructurales no prueban interacción gráfica.
+Los logs, la captura y el SHA del commit probado deben guardarse junto al resultado de CI. La captura permite revisar si se ve XFCE, pero no prueba teclado, ratón, navegación, instalación de paquetes ni uso en Termux.
 
 ## Manual — escritorio QEMU
 
