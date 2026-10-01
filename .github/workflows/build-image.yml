@@ -1,0 +1,76 @@
+name: Build MiniAriño image
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: miniarino-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install host build and emulator dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            debootstrap debian-archive-keyring util-linux e2fsprogs \
+            qemu-system-x86 qemu-utils ca-certificates curl gzip python3 python3-pil
+
+      - name: Build fresh image
+        run: |
+          make clean
+          make
+
+      - name: Verify image structure
+        run: make verify
+
+      - name: Make the built image readable and writable to the QEMU test user
+        run: |
+          sudo chmod 0755 build
+          sudo chown "$(id -u):$(id -g)" build/os.img
+          chmod 0644 build/os.img
+          stat -c '%A %a %U:%G %n' build build/os.img
+          test -r build/os.img
+          test -w build/os.img
+
+      - name: Boot smoke test in BIOS/SeaBIOS QEMU
+        run: scripts/smoke-qemu.sh
+
+      - name: Capture the live XFCE desktop in BIOS/SeaBIOS QEMU
+        run: scripts/desktop-smoke-qemu.sh
+
+      - name: Upload desktop screenshot and serial diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: miniarino-desktop-diagnostics-${{ github.sha }}
+          path: build/desktop-smoke/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Compress image and create checksum (only after all tests pass)
+        run: |
+          gzip -1 -c build/os.img > build/os.img.gz
+          sha256sum build/os.img.gz > build/os.img.gz.sha256
+          cat build/os.img.gz.sha256
+
+      - name: Upload verified image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: miniarino-debian13-amd64-${{ github.sha }}
+          path: |
+            build/os.img.gz
+            build/os.img.gz.sha256
+          if-no-files-found: error
+          retention-days: 14

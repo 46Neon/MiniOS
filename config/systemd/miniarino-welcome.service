@@ -1,0 +1,15 @@
+[Unit]
+Description=Show the MiniAriño boot welcome on the system console
+DefaultDependencies=no
+After=local-fs.target systemd-udev-trigger.service
+Before=display-manager.service
+ConditionPathExists=/dev/console
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'printf "\\nMiniAriño bienvenido\\n\\n" > /dev/tty0; printf "\\nMiniAriño bienvenido\\n\\n" > /dev/ttyS0'
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

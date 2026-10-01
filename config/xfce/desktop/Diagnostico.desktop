@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Diagnóstico MiniAriño
+Comment=Comprobar sesión, herramientas y configuración del escritorio
+Exec=miniarino-selftest
+Icon=utilities-terminal
+Terminal=true
+Categories=System;Utility;

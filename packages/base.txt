@@ -1,0 +1,11 @@
+ca-certificates
+console-setup
+locales
+sudo
+systemd-sysv
+systemd-timesyncd
+linux-image-amd64
+initramfs-tools
+grub-common
+grub2-common
+grub-pc-bin

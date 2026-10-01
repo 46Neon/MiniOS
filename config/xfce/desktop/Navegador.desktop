@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Navegador web
+Comment=Navegar y descargar con Firefox ESR
+Exec=firefox-esr
+Icon=firefox-esr
+Terminal=false
+Categories=Network;WebBrowser;

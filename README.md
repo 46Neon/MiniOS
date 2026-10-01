@@ -1,136 +1,57 @@
-# MiniOS - sistema operativo x86 bare-metal en ensamblador
+# MiniAriño — escritorio Linux para QEMU/Termux
 
-Sistema operativo de 32 bits que arranca desde BIOS (MBR), sin compilador ni
-lenguaje de alto nivel: solo ensamblador GNU `as` en sintaxis Intel, donde cada
-mnemonico se convierte 1 a 1 en su opcode x86. Pensado para una CPU comercial
-sin GPU dedicada (usa el modo texto VGA 80x25 que expone el BIOS/CSM).
+MiniAriño cambia de estrategia: **Debian 13 amd64 + kernel Linux + XFCE**, con arranque BIOS/SeaBIOS, GRUB y disco IDE en QEMU. Ya no se ampliará el kernel bare-metal de ensamblador para simular Linux. Los fuentes anteriores se archivan bajo `legacy/baremetal/` y no participan en la nueva construcción.
 
-ESTADO HONESTO: todo el proyecto ensambla y enlaza sin errores y se verifico de
-forma estatica (tamanos, firma 0x55AA, desensamblado de los puntos criticos,
-orden de enlazado). NO se pudo ejecutar en QEMU en el entorno donde se genero.
-Pruebalo tu y, si algo falla, reporta la salida de `make debug`.
+## Estado honesto
 
----------------------------------------------------------------------------
-## 1. Auditoria: como funciona una CPU comercial promedio sin GPU
+Esta rama contiene el constructor reproducible, la configuración prevista de Debian/XFCE/GRUB y las pruebas estructurales y de arranque. **La imagen no se considera terminada ni verificada hasta que el workflow la construya, pase sus comprobaciones y se pruebe la interfaz en QEMU/Termux.** El entorno de esta sesión no cuenta con `debootstrap`, dispositivos loop ni QEMU para fabricar y arrancar la imagen aquí.
 
-1. **Reset**: al dar corriente, el procesador arranca en modo real (16 bits) y
-   ejecuta la primera instruccion en el vector de reset 0xFFFFFFF0 (mapeado a la
-   ROM del firmware).
-2. **BIOS/UEFI + POST**: el firmware inicializa DRAM, chipset y controladores,
-   y detecta dispositivos. En equipos UEFI, el modulo CSM (modo compatibilidad)
-   emula un BIOS clasico; MiniOS necesita ese modo (o QEMU con BIOS).
-3. **Arranque**: el BIOS lee el sector 0 del disco (512 bytes) a 0x7C00 y, si
-   los ultimos 2 bytes son 0x55 0xAA, salta ahi (`boot/boot.s`).
-4. **Modo real (16 bits)**: direccionamiento segmento:offset, 1 MB de espacio,
-   sin proteccion. Se usa para llamar al BIOS (INT 13h disco, INT 15h memoria).
-5. **Linea A20**: hay que habilitarla para acceder por encima de 1 MB
-   (`boot/stage2.s`: BIOS, puerto 0x92 o controlador 8042).
-6. **Modo protegido (32 bits)**: se carga la GDT, se activa CR0.PE y un salto
-   lejano recarga CS. Segmentacion "plana" de 4 GB (base 0, limite 4 GB).
-7. **Interrupciones**: dos PIC 8259 (remapeados a los vectores 0x20-0x2F para no
-   chocar con las excepciones 0-31) y la IDT de 256 entradas.
-8. **Paginacion**: MMU con directorio y tablas de 4 KB (CR3/CR0.PG). MiniOS usa
-   mapeo identidad de 16 MB y deja la pagina 0 sin mapear para atrapar NULL.
-9. **Perifericos clasicos**: temporizador PIT 8254 (100 Hz), teclado PS/2
-   (puertos 0x60/0x64; el BIOS emula PS/2 sobre USB "legacy"), disco ATA en modo
-   compatibilidad (puertos 0x1F0-0x1F7, PIO LBA28).
-10. **Video sin GPU**: el modo texto VGA 80x25 es memoria mapeada en 0xB8000
-    (2 bytes por celda: caracter + atributo). Sin GPU no hay aceleracion, pero
-    el framebuffer del chipset grafico integrado sigue siendo accesible.
+El repositorio MiniOS auditado no incluía la `os.img` que Lennd había probado anteriormente. Por eso el constructor conserva una imagen previa si encuentra `build/os.img`, archivándola bajo `reference/images/` antes de sustituirla, pero no puede preservar la copia local que no se entregó.
 
----------------------------------------------------------------------------
-## 2. Estructura del proyecto
+## Qué integra
 
-```
-miniOS/
-|-- Makefile                 targets: all, run, debug, hex, clean
-|-- include/constants.inc    mapa de memoria, offsets de PCB, constantes
-|-- linker/kernel.ld         kernel enlazado en 0x10000
-|-- boot/
-|   |-- boot.s               MBR (512 B): lee stage2 con INT 13h ext., firma 55AA
-|   `-- stage2.s             A20, memoria, carga kernel, GDT, salto a 32 bits
-|-- kernel/
-|   |-- entry.s              punto de entrada, orden de init, idle con HLT
-|   |-- gdt.s  idt.s  pic.s  GDT definitiva, IDT/excepciones/IRQ/int 0x80, PIC
-|   |-- vga.s                consola texto: putc/print/hex/dec, scroll, barra
-|   |-- paging.s  memory.s   paginacion y gestor de marcos (bitmap)
-|   |-- process.s            PCB, planificador round-robin, cambio de contexto
-|   |-- pit.s  keyboard.s    timer 100 Hz y teclado PS/2 (scancode set 1)
-|   |-- ata.s  fs.s          disco ATA PIO y MiniFS (directorio + binarios)
-|   |-- syscall.s            int 0x80 (10 servicios)
-|   |-- clock.s              tarea del reloj en la barra de estado
-|   `-- shell.s              interprete de comandos
-|-- fs/dir.s                 directorio de MiniFS (LBA 128)
-`-- programs/                hola.s, contador.s (binarios planos)
+- Debian 13 `trixie`, amd64, kernel Linux, GRUB para BIOS/MBR y raíz ext4 dentro de una imagen raw dispersa de 16 GiB.
+- Escritorio XFCE/LightDM, Thunar, terminal Bash, Firefox ESR, Synaptic/GDebi, herramientas de desarrollo y `nmap`.
+- Usuario normal `miniarino`, acceso automático al escritorio para la VM de pruebas y saludo de arranque **“MiniAriño bienvenido”**.
+- GRUB con tres opciones: Iniciar MiniAriño, Reiniciar y Apagar.
+- QEMU con disco IDE y tarjeta de red e1000 emulada; la pila de Linux proporciona procesos, memoria virtual, filesystem, sockets, TCP/TLS y compatibilidad ELF de Linux.
+
+## Construcción
+
+La construcción requiere un host Linux amd64 con acceso root, `debootstrap`, el paquete `debian-archive-keyring`, `sfdisk`, `losetup`, `mkfs.ext4`, `mount`, `chroot` y red. **Termux en Android ARM se usa para ejecutar la VM, no para construir su filesystem**: el workflow de GitHub Actions es la vía recomendada.
+
+```sh
+make clean && make
+make verify
 ```
 
-Disco: LBA0 MBR | 1-4 stage2 | 5.. kernel | 128 directorio | 129-130 programas.
+`make` reconstruye la imagen cada vez. `make clean` elimina solo temporales: no borra `build/os.img`. Si ya existía una imagen con ese nombre, el constructor la conserva con su hash en `reference/images/` antes de reemplazarla, pero solo después de que la nueva imagen pase su verificación. No subas imágenes privadas o de gran tamaño al historial de Git; usa artefactos/releases.
 
-Mapa de memoria: kernel 0x10000 | pila 0x9F000 | IDT 0x100000 |
-PAGE_DIR 0x101000 | PAGE_TABLES 0x102000 | PCB 0x106000 | bitmap 0x107000 |
-marcos libres 0x200000-0x1000000 (2 MB a 16 MB).
+La salida es `build/os.img` (16 GiB lógicos, archivo raw disperso). El workflow comprime la imagen después de las verificaciones para descargarla como artefacto y entrega sumas SHA-256.
 
----------------------------------------------------------------------------
-## 3. Ruta de 300 hitos -> archivos (aproximado)
+## Prueba en Termux/QEMU
 
-| Hitos     | Fase                        | Archivos / rutinas                                   |
-|-----------|-----------------------------|------------------------------------------------------|
-| 1 - 75    | Arranque                    | boot/boot.s, boot/stage2.s (GDT, CR0.PE, far jump), kernel/entry.s |
-| 76 - 150  | Hardware core               | stage2.s (A20), gdt.s, pic.s, idt.s, vga.s           |
-| 151 - 225 | Memoria y multitarea        | paging.s, memory.s (bitmap), process.s (PCB, switch_to) |
-| 226 - 275 | Drivers                     | keyboard.s (0x60), pit.s, ata.s (0x1F0-0x1F7), fs.s  |
-| 276 - 300 | Syscalls y estabilidad      | syscall.s, fs.s (exec_file), programs/, shell.s, entry.s (idle + HLT) |
+Una vez descargados el artefacto `.img.gz` y este repositorio en Termux:
 
----------------------------------------------------------------------------
-## 4. Compilar y ejecutar
-
-Requisitos: binutils (`as`, `ld`), `make`, `qemu-system-i386`.
-
-```
-make            # genera build/os.img
-make run        # qemu-system-i386 -drive file=build/os.img,format=raw,if=ide -m 64
-make debug      # QEMU con log de interrupciones/excepciones (-d int,cpu_reset -no-reboot)
-make hex        # muestra los bytes reales (opcodes) del sector de arranque
-make clean
+```sh
+chmod +x run-termux.sh
+./run-termux.sh /ruta/al/artefacto/os.img.gz
 ```
 
-En macOS/Windows usa un binutils cruzado: `make AS=i686-elf-as LD=i686-elf-ld`.
-Importante: usa `-drive ...if=ide`; `-fda` (disquete) no sirve porque el stage2
-lee por LBA con INT 13h extendido.
+El script descomprime conservando bloques cero cuando `dd conv=sparse` está disponible y ejecuta QEMU con TCG, 2 vCPU, 2 GiB, VGA estándar, disco IDE y red user-mode con e1000. En ARM, x86-64 se emula por software y la interfaz —especialmente Firefox— puede ser lenta. Ajusta `RAM`, `SMP` o `QEMU_DISPLAY` según el teléfono y el backend gráfico instalado. Si SDL falla, prueba `QEMU_DISPLAY=gtk` o configura VNC manualmente. La disponibilidad exacta de QEMU y Termux:X11 depende de los repositorios y versión instalados en el dispositivo; el script comprueba que encuentre un binario QEMU x86-64.
 
-Comandos del shell: help, clear, mem, ps, ls, run <programa>, uptime, echo,
-reboot, halt. Programas incluidos: hola.bin, contador.bin.
+**Cuenta de la imagen de prueba:** usuario `miniarino`, clave inicial `miniarino`; cámbiala inmediatamente con `passwd`. La imagen es para pruebas en VM, no un servidor público. Mantén la red en user-mode y no expongas servicios ni uses credenciales reales.
 
-Syscalls (int 0x80, numero en EAX): 1 write, 2 putchar, 3 getchar, 4 exit,
-5 yield, 6 ticks, 7 sleep(ms), 8 print_dec, 9 getpid.
+## Alcance de compatibilidad
 
----------------------------------------------------------------------------
-## 5. Limitaciones conocidas
+MiniAriño ejecuta aplicaciones Linux amd64 empaquetadas para Debian. Puede soportar aplicaciones ELF32 Linux seleccionadas mediante multiarch y dependencias compatibles; eso se validará aparte. **No promete ejecutar aplicaciones nativas de Windows o macOS**, ni todos los binarios Linux de cualquier distribución. Para instalar software, prefiere repositorios Debian/`apt` o paquetes `.deb` de amd64 con firmas verificadas. `nmap` sirve para laboratorios y redes que tengas autorización de auditar; la red NAT de QEMU limita algunos escaneos de la LAN del teléfono.
 
-- Todo corre en ring 0: no hay TSS ni modo usuario (ring 3), asi que no hay
-  aislamiento real entre programas.
-- Solo BIOS/CSM: sin UEFI nativo, sin AHCI/NVMe, sin USB propio (el teclado
-  depende de la emulacion PS/2 del BIOS).
-- Consola de texto 80x25: sin modo grafico, sin raton, sin red.
-- Sistema de archivos minimo (solo lectura de un directorio plano); los
-  binarios son "planos", independientes de posicion, no ELF/PE/Mach-O.
-- Mensajes en ASCII sin tildes (el modo texto VGA usa CP437).
-- No ejecuta programas de Windows, Linux o macOS, ni tiene navegador, red ni
-  suite ofimatica. Ver la hoja de ruta abajo.
+## Verificación
 
----------------------------------------------------------------------------
-## 6. Hoja de ruta realista hacia un escritorio
+- `make verify`: MBR de 16 GiB, tabla MBR, firma `55 AA`, una partición ext4 Linux, GRUB BIOS, kernel, initramfs, paquetes/binarios XFCE, LightDM/autologin, sesión, servicios, wallpaper y launchers dentro del rootfs.
+- `make selftest`, Ctrl+Alt+M o el acceso «Diagnóstico MiniAriño»: ejecutar **dentro de XFCE** como usuario `miniarino`, nunca como root. Comprueba en vivo sesión, D-Bus/X11, procesos, EWMH, servicios, Xfconf temporal, launchers y operaciones de archivo; guarda el informe en `~/.cache/miniarino-selftest/last.log` y el código de salida en `last.exitcode`. No instala ni ejecuta las pruebas internas upstream de Xfce.
+- `scripts/smoke-qemu.sh`: arranque headless por BIOS y comprobación del saludo en consola serial. No sustituye una prueba visual de XFCE/teclado/ratón.
+- `docs/PRUEBAS_ACEPTACION.md`: pruebas manuales en Termux/QEMU y las limitaciones actuales.
+- `docs/INTEGRACION_50.md`: correspondencia de los 50 hitos con componentes Linux reutilizados.
 
-Orden sugerido (cada paso es utilizable por si solo):
-
-1. Terminal ampliada: historial, cd/cat/write, edicion de archivos, escritura
-   en MiniFS, pipes sencillos.
-2. Modo grafico VESA (framebuffer lineal), fuentes bitmap, raton PS/2 y un
-   gestor de ventanas basico.
-3. Modo usuario (ring 3, TSS) + paginacion por proceso.
-4. Cargador ELF32 y un subconjunto de syscalls de Linux (binarios estaticos).
-5. Red: driver e1000/RTL8139, ARP/IP/UDP/TCP, DHCP, DNS, HTTP.
-6. TLS, un motor HTML/CSS/JS y decodificacion de video: cada uno equivale a
-   proyectos de cientos de miles a millones de lineas. Es el punto donde
-   proyectos reales (Linux, ReactOS, Haiku) adaptan software existente en vez
-   de reescribirlo.
+No marcar como listo un release hasta pasar el workflow y la prueba manual visual en el dispositivo Termux/QEMU.
