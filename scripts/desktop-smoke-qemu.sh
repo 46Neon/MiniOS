@@ -20,6 +20,49 @@ MOUNT="$WORK/rootfs"
 LOOP=""
 rm -f "$SERIAL" "$QEMU_LOG" "$MONITOR" "$PPM" "$PNG" "$SELFTEST_PPM" "$SELFTEST_PNG" "$SELFTEST_LOG" "$SELFTEST_EXIT"
 mkdir -p "$MOUNT"
+PID=""
+stop_qemu() {
+  set +e
+  if [[ -n "$PID" ]]; then
+    kill "$PID" 2>/dev/null
+    wait "$PID" 2>/dev/null
+  fi
+  set -e
+}
+cleanup() {
+  set +e
+  mountpoint -q "$MOUNT" && sudo -n umount "$MOUNT"
+  [[ -n "$LOOP" ]] && sudo -n losetup -d "$LOOP"
+  if [[ -n "$PID" ]]; then
+    kill "$PID" 2>/dev/null
+    wait "$PID" 2>/dev/null
+  fi
+}
+trap cleanup EXIT
+
+# Add a temporary XDG autostart entry so the test runs inside the real XFCE
+# session without relying on keyboard injection. It is removed before publishing.
+AUTOSTART_REL="home/miniarino/.config/autostart/miniarino-ci-selftest.desktop"
+LOOP="$(sudo -n losetup --find --show --partscan "$IMG")"
+PART="${LOOP}p1"
+for _ in $(seq 1 30); do [[ -b "$PART" ]] && break; sleep 1; done
+[[ -b "$PART" ]] || { echo "No se pudo abrir la partición para preparar el autodiagnóstico: $PART" >&2; exit 1; }
+sudo -n mount "$PART" "$MOUNT"
+sudo -n mkdir -p "$MOUNT/home/miniarino/.config/autostart"
+printf '%s\n' \
+  '[Desktop Entry]' \
+  'Type=Application' \
+  'Name=MiniAriño CI autodiagnóstico' \
+  'Comment=Entrada temporal de autodiagnóstico para CI' \
+  'Exec=xfce4-terminal --disable-server --command=/usr/local/bin/miniarino-selftest --hold' \
+  'Terminal=false' \
+  'Hidden=false' \
+  | sudo -n tee "$MOUNT/$AUTOSTART_REL" >/dev/null
+sudo -n chown 1000:1000 "$MOUNT/$AUTOSTART_REL"
+sudo -n chmod 0644 "$MOUNT/$AUTOSTART_REL"
+sudo -n umount "$MOUNT"
+sudo -n losetup -d "$LOOP"
+LOOP=""
 
 qemu-system-x86_64 \
   -machine pc -accel tcg,thread=multi -m 2048 -smp 2 -cpu max \
@@ -30,20 +73,6 @@ qemu-system-x86_64 \
   -monitor "unix:$MONITOR,server=on,wait=off" \
   -no-reboot -no-shutdown >"$QEMU_LOG" 2>&1 &
 PID=$!
-stop_qemu() {
-  set +e
-  kill "$PID" 2>/dev/null
-  wait "$PID" 2>/dev/null
-  set -e
-}
-cleanup() {
-  set +e
-  mountpoint -q "$MOUNT" && sudo -n umount "$MOUNT"
-  [[ -n "$LOOP" ]] && sudo -n losetup -d "$LOOP"
-  kill "$PID" 2>/dev/null
-  wait "$PID" 2>/dev/null
-}
-trap cleanup EXIT
 
 # Wait for Linux to finish booting and emit the configured serial greeting.
 for _ in $(seq 1 240); do
@@ -109,16 +138,13 @@ colors = im.getcolors(maxcolors=1_000_000)
 unique = len(colors) if colors is not None else 1_000_001
 print(f'Captura: {png}; resolución {im.width}x{im.height}; colores distintos {unique}.')
 text = open(serial, encoding='utf-8', errors='replace').read()
-for needle in ('lightdm.service', 'xfce'):
-    print(f'Consola contiene {needle!r}: {needle.lower() in text.lower()}')
+print(f'Consola contiene el servicio LightDM: {"lightdm.service" in text.lower()}')
 if unique < 8:
     raise SystemExit('La captura está vacía o casi sin contenido gráfico.')
 PY
 
-# Open XFCE's standard application finder and type the diagnostic command.
-# The configured Ctrl+Alt+M binding remains available for interactive use, but
-# this smoke test avoids depending on an unverified keybinding in headless QEMU.
-# It still runs with the live user's X11, D-Bus and XFCE session, not in a chroot.
+# The temporary XDG autostart entry runs the diagnostic with the live user's
+# XFCE, X11 and D-Bus environment. No synthetic keyboard input is required.
 python3 - "$MONITOR" "$SELFTEST_PPM" <<'PY'
 import socket, sys, time
 sock_path, screenshot = sys.argv[1:]
@@ -135,24 +161,8 @@ def prompt(timeout=10):
 def command(text, timeout=10):
     s.sendall((text+'\n').encode()); return prompt(timeout)
 prompt()
-command('sendkey alt-f2')
-time.sleep(2)
-# QEMU releases injected keys asynchronously; pause between key events so the
-# appfinder receives the command and resolves the installed diagnostic launcher.
-for char in 'miniarino-selftest':
-    key = 'spc' if char == ' ' else 'minus' if char == '-' else char
-    if not (key in ('spc', 'minus') or key.isalnum()):
-        raise RuntimeError(f'No QEMU key mapping for {char!r}')
-    response=command(f'sendkey {key}', timeout=3)
-    if b'unknown key' in response.lower() or b'error' in response.lower():
-        raise RuntimeError(f'QEMU rejected key {key}: {response.decode(errors="replace")}')
-    time.sleep(0.2)
-time.sleep(1)
-print('Sent diagnostic command through XFCE appfinder')
-command('sendkey ret')
-# The diagnostic checks versions, services, X11/D-Bus and Xfconf, then saves a
-# full report under the miniarino user's cache directory. Its Desktop Entry
-# opens the output in a terminal when XFCE resolves the launcher.
+# The desktop has already been captured; allow the session autostart to run
+# the diagnostic and persist its report before taking the second screenshot.
 time.sleep(25)
 result=command(f'screendump {screenshot}')
 if b'Error' in result or b'failed' in result.lower(): raise RuntimeError(result.decode(errors='replace'))
@@ -179,13 +189,15 @@ PY
 # QEMU has received the guest's clean ACPI shutdown; stop its paused process and
 # read the report from the image for an actual pass/fail gate.
 stop_qemu
-LOOP="$(sudo -n losetup --find --show --partscan --read-only "$IMG")"
+LOOP="$(sudo -n losetup --find --show --partscan "$IMG")"
 PART="${LOOP}p1"
 for _ in $(seq 1 30); do [[ -b "$PART" ]] && break; sleep 1; done
 [[ -b "$PART" ]] || { echo "No se pudo abrir la partición para leer el autodiagnóstico: $PART" >&2; exit 1; }
-sudo -n mount -o ro,noload "$PART" "$MOUNT"
+sudo -n mount "$PART" "$MOUNT"
 sudo -n cat "$MOUNT/home/miniarino/.cache/miniarino-selftest/last.log" > "$SELFTEST_LOG"
 sudo -n cat "$MOUNT/home/miniarino/.cache/miniarino-selftest/last.exitcode" > "$SELFTEST_EXIT"
+# Keep the CI-only autostart out of the verified image distributed downstream.
+sudo -n rm -f "$MOUNT/$AUTOSTART_REL"
 sudo -n umount "$MOUNT"
 sudo -n losetup -d "$LOOP"
 LOOP=""
