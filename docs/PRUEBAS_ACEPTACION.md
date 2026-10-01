@@ -40,10 +40,10 @@ En un QEMU gráfico de x86-64, adjuntar la imagen raw como IDE y arrancar en BIO
 
 ## Manual — dispositivo Android / Termux
 
-1. Instalar una build de QEMU de Termux con soporte `qemu-system-x86_64`, salida gráfica disponible y almacenamiento libre suficiente para una imagen de 16 GiB lógicos.
+1. Instalar una build de QEMU de Termux con soporte `qemu-system-x86_64` y reservar almacenamiento para la imagen raw lógica de 16 GiB.
 2. Descargar el artefacto `.img.gz` y el SHA-256 del mismo run de Actions; verificarlo antes de expandirlo.
-3. Ejecutar `./run-termux.sh /ruta/al/os.img.gz` en una sesión de Termux con un backend gráfico compatible (por ejemplo, Termux:X11). La expansión dispersa solo ahorra espacio si la implementación `dd` local soporta `conv=sparse`.
-4. Completar en el teléfono la misma lista visual de GRUB, saludo, XFCE, ratón/teclado, red y aplicaciones anterior.
+3. Para Termux:X11, iniciar `termux-x11 :0` y exportar `DISPLAY=:0`; luego ejecutar `./run-termux.sh /ruta/al/os.img.gz`. `QEMU_DISPLAY=auto` prefiere SDL/GTK si hay display y hace fallback a VNC local en `127.0.0.1:5901`. El script exige soporte de `dd conv=sparse` para evitar una expansión completa inesperada.
+4. Completar en el teléfono la lista visual de GRUB, saludo, XFCE, teclado/ratón, red y aplicaciones. Registrar si la tableta USB fue reconocida o si se usó la entrada PS/2.
 5. Guardar modelo y arquitectura del dispositivo, versiones de Android/Termux/QEMU/backend gráfico, RAM asignada, SHA del artefacto y evidencia de pantalla/logs.
 
 La emulación amd64 por TCG en un teléfono ARM puede ser lenta, y ciertos binarios QEMU/paquetes de Termux pueden no soportar la combinación requerida. No se promete rendimiento nativo ni se debe marcar esta prueba como pasada sin ejecución real en un dispositivo.

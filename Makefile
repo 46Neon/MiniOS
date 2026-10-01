@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 IMAGE := build/os.img
 
-.PHONY: all image verify run debug selftest clean
+.PHONY: all image verify run debug selftest test-qemu-runner clean
 all: image
 
 # The image is intentionally rebuilt on every invocation, including after clean.
@@ -21,6 +21,9 @@ debug: verify
 # Run from a logged-in, unprivileged XFCE terminal inside MiniAriño.
 selftest:
 	./scripts/miniarino-selftest.sh
+
+test-qemu-runner:
+	./tests/test-run-qemu.sh
 
 # Preserve any existing os.img; remove only disposable build work files.
 clean:

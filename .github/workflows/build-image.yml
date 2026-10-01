@@ -20,6 +20,9 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Test Termux/QEMU display and input selection
+        run: make test-qemu-runner
+
       - name: Install host build and emulator dependencies
         run: |
           sudo apt-get update
