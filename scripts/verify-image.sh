@@ -54,4 +54,5 @@ compgen -G "$WORK/boot/initrd.img-*" >/dev/null || { echo "Falta initramfs." >&2
 COUNT="$(grep -c '^menuentry ' "$WORK/boot/grub/grub.cfg" || true)"
 [[ "$COUNT" = 3 ]] || { echo "GRUB debe tener 3 entradas; tiene $COUNT." >&2; exit 1; }
 grep -q 'MiniAriño bienvenido' "$WORK/etc/systemd/system/miniarino-welcome.service" || { echo "Falta el saludo de arranque." >&2; exit 1; }
-printf 'OK: firma MBR, GRUB BIOS, kernel, initramfs, XFCE, Firefox ESR y saludo.\n'
+python3 "$ROOT/scripts/verify-xfce-image.py" "$WORK"
+printf 'OK: firma MBR, GRUB BIOS, kernel, initramfs, XFCE, Firefox ESR, saludo y configuración de escritorio.\n'

@@ -17,3 +17,5 @@ xdg-user-dirs
 x11-xserver-utils
 plymouth
 plymouth-themes
+desktop-file-utils
+x11-utils

@@ -123,6 +123,7 @@ install -m 0644 "$ROOT/config/xfce/xfce4-desktop.xml" "$MNT/etc/skel/.config/xfc
 install -d -m 0755 "$MNT/home/miniarino/.config/xfce4/xfconf/xfce-perchannel-xml"
 install -m 0644 "$ROOT/config/xfce/xfce4-desktop.xml" "$MNT/home/miniarino/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml"
 install -m 0755 "$ROOT/config/xfce/set-display-mode.sh" "$MNT/usr/local/bin/miniarino-set-display-mode"
+install -m 0755 "$ROOT/scripts/miniarino-selftest.sh" "$MNT/usr/local/bin/miniarino-selftest"
 install -m 0644 "$ROOT/config/xfce/miniarino-resolution.desktop" "$MNT/etc/xdg/autostart/miniarino-resolution.desktop"
 install -d -m 0755 "$MNT/home/miniarino/Desktop" "$MNT/home/miniarino/Downloads" "$MNT/home/miniarino/Documents" "$MNT/home/miniarino/Pictures"
 for launcher in "$ROOT"/config/xfce/desktop/*.desktop; do
