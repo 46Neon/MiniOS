@@ -48,7 +48,7 @@ else
   pass 'Ejecución como usuario sin privilegios'
 fi
 
-for app in xfce4-session xfwm4 xfce4-panel xfdesktop xfconfd xfconf-query \
+for app in xfce4-session xfwm4 xfce4-panel xfdesktop xfconf-query \
            xfce4-terminal thunar firefox-esr synaptic-pkexec desktop-file-validate \
            xprop xdpyinfo xrandr dbus-send nmcli git nmap python3; do
   check "Comando instalado: $app" check_command "$app"
@@ -87,6 +87,7 @@ if xfconf-query -c xfce4-desktop -l >/dev/null 2>&1; then
 else
   fail 'Canal de configuración del escritorio accesible'
 fi
+check 'Daemon de configuración Xfconf activo' check_process xfconfd
 
 WM_ID="$(xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | sed -nE 's/.*window id # (0x[[:xdigit:]]+).*/\1/p')"
 if [[ -n "$WM_ID" ]] && xprop -id "$WM_ID" _NET_WM_NAME 2>/dev/null | grep -Eiq 'xfwm4'; then
