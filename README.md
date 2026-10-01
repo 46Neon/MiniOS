@@ -35,10 +35,14 @@ Una vez descargados el artefacto `.img.gz` y este repositorio en Termux:
 
 ```sh
 chmod +x run-termux.sh
+termux-x11 :0 &      # si vas a usar Termux:X11
+export DISPLAY=:0
 ./run-termux.sh /ruta/al/artefacto/os.img.gz
 ```
 
-El script descomprime conservando bloques cero cuando `dd conv=sparse` está disponible y ejecuta QEMU con TCG, 2 vCPU, 2 GiB, VGA estándar, disco IDE y red user-mode con e1000. En ARM, x86-64 se emula por software y la interfaz —especialmente Firefox— puede ser lenta. Ajusta `RAM`, `SMP` o `QEMU_DISPLAY` según el teléfono y el backend gráfico instalado. Si SDL falla, prueba `QEMU_DISPLAY=gtk` o configura VNC manualmente. La disponibilidad exacta de QEMU y Termux:X11 depende de los repositorios y versión instalados en el dispositivo; el script comprueba que encuentre un binario QEMU x86-64.
+El lanzador usa TCG, 2 vCPU, 2 GiB, VGA estándar, disco IDE, red user-mode con e1000 y agrega tableta/teclado USB si la build de QEMU los admite. `QEMU_DISPLAY=auto` elige SDL/GTK cuando hay un display exportado y esos backends existen; si no, abre VNC en `127.0.0.1:5901`. Para elegirlo explícitamente, usa `QEMU_DISPLAY=sdl`, `QEMU_DISPLAY=gtk` o `QEMU_DISPLAY=vnc`. Puedes desactivar periféricos USB con `QEMU_USB_INPUT=off`, o ajustar `RAM` y `SMP` según el teléfono.
+
+Al expandir `.img.gz`, el script comprueba que `dd` admita `conv=sparse` y se detiene con un aviso si no; así evita llenar inesperadamente el almacenamiento con una imagen de hasta 16 GiB lógicos. En ARM, x86-64 se emula por software y la interfaz —especialmente Firefox— puede ser lenta. La disponibilidad exacta de QEMU y Termux:X11 depende de los repositorios y la versión instalados en el dispositivo; esta comprobación local no sustituye la prueba en un teléfono real.
 
 **Cuenta de la imagen de prueba:** usuario `miniarino`, clave inicial `miniarino`; cámbiala inmediatamente con `passwd`. La imagen es para pruebas en VM, no un servidor público. Mantén la red en user-mode y no expongas servicios ni uses credenciales reales.
 
@@ -51,6 +55,7 @@ MiniAriño ejecuta aplicaciones Linux amd64 empaquetadas para Debian. Puede sopo
 - `make verify`: MBR de 16 GiB, tabla MBR, firma `55 AA`, una partición ext4 Linux, GRUB BIOS, kernel, initramfs, paquetes/binarios XFCE, LightDM/autologin, sesión, servicios, wallpaper y launchers dentro del rootfs.
 - `make selftest`, Ctrl+Alt+M o el acceso «Diagnóstico MiniAriño»: ejecutar **dentro de XFCE** como usuario `miniarino`, nunca como root. Comprueba en vivo sesión, D-Bus/X11, procesos, EWMH, servicios, Xfconf temporal, launchers y operaciones de archivo; guarda el informe en `~/.cache/miniarino-selftest/last.log` y el código de salida en `last.exitcode`. No instala ni ejecuta las pruebas internas upstream de Xfce.
 - `scripts/smoke-qemu.sh`: arranque headless por BIOS y comprobación del saludo en consola serial. No sustituye una prueba visual de XFCE/teclado/ratón.
+- `make test-qemu-runner`: prueba la selección SDL/GTK/VNC y los periféricos con un QEMU simulado; no sustituye la ejecución real en Android.
 - `docs/PRUEBAS_ACEPTACION.md`: pruebas manuales en Termux/QEMU y las limitaciones actuales.
 - `docs/INTEGRACION_50.md`: correspondencia de los 50 hitos con componentes Linux reutilizados.
 
