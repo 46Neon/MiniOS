@@ -115,9 +115,10 @@ if unique < 8:
     raise SystemExit('La captura está vacía o casi sin contenido gráfico.')
 PY
 
-# Trigger the in-session diagnostic using the configured Ctrl+Alt+M shortcut.
-# This exercises real keyboard input and runs the checks with the user's X11,
-# D-Bus and XFCE environment rather than in a host chroot.
+# Open XFCE's standard application finder and type the diagnostic command.
+# The configured Ctrl+Alt+M binding remains available for interactive use, but
+# this smoke test avoids depending on an unverified keybinding in headless QEMU.
+# It still runs with the live user's X11, D-Bus and XFCE session, not in a chroot.
 python3 - "$MONITOR" "$SELFTEST_PPM" <<'PY'
 import socket, sys, time
 sock_path, screenshot = sys.argv[1:]
@@ -134,9 +135,19 @@ def prompt(timeout=10):
 def command(text, timeout=10):
     s.sendall((text+'\n').encode()); return prompt(timeout)
 prompt()
-command('sendkey ctrl-alt-m')
+command('sendkey alt-f2')
+time.sleep(2)
+# XFCE appfinder accepts this command as ordinary text. Type it using QEMU's
+# key names for lowercase letters, digits, spaces and minus signs.
+for char in 'xfce4-terminal --hold -x miniarino-selftest':
+    key = 'spc' if char == ' ' else 'minus' if char == '-' else char
+    if not (key in ('spc', 'minus') or key.isalnum()):
+        raise RuntimeError(f'No QEMU key mapping for {char!r}')
+    command(f'sendkey {key}', timeout=3)
+command('sendkey ret')
 # The diagnostic checks versions, services, X11/D-Bus and Xfconf, then saves a
-# full report under the miniarino user's cache directory.
+# full report under the miniarino user's cache directory. --hold keeps its
+# terminal visible for the diagnostic screenshot.
 time.sleep(25)
 result=command(f'screendump {screenshot}')
 if b'Error' in result or b'failed' in result.lower(): raise RuntimeError(result.decode(errors='replace'))
