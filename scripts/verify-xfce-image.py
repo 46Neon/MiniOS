@@ -89,7 +89,7 @@ def main() -> int:
         try:
             session_cfg.read(session_file, encoding="utf-8")
             session = session_cfg["Desktop Entry"]
-            session_ok = (session.get("Type") == "XSession"
+            session_ok = (session.get("Type") == "Application"
                           and bool(session.get("Exec"))
                           and session.get("Exec", "").split()[0] in {"startxfce4", "/usr/bin/startxfce4"})
         except (KeyError, configparser.Error):
@@ -108,7 +108,8 @@ def main() -> int:
     for link, targets in service_links.items():
         full = path(link)
         actual = os.readlink(full) if full.is_symlink() else ""
-        check(f"Enabled systemd service link: {link}", actual in targets and full.resolve().is_file(),
+        target_path = path(actual) if actual.startswith("/") else full.parent / actual
+        check(f"Enabled systemd service link: {link}", actual in targets and target_path.is_file(),
               f"unexpected or dangling target: {actual or 'missing'}")
     check("MiniAriño welcome service installed", path("/etc/systemd/system/miniarino-welcome.service").is_file())
 
