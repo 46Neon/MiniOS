@@ -137,17 +137,22 @@ def command(text, timeout=10):
 prompt()
 command('sendkey alt-f2')
 time.sleep(2)
-# XFCE appfinder accepts this command as ordinary text. Type it using QEMU's
-# key names for lowercase letters, digits, spaces and minus signs.
-for char in 'xfce4-terminal --hold -x miniarino-selftest':
+# QEMU releases injected keys asynchronously; pause between key events so the
+# appfinder receives the command and resolves the installed diagnostic launcher.
+for char in 'miniarino-selftest':
     key = 'spc' if char == ' ' else 'minus' if char == '-' else char
     if not (key in ('spc', 'minus') or key.isalnum()):
         raise RuntimeError(f'No QEMU key mapping for {char!r}')
-    command(f'sendkey {key}', timeout=3)
+    response=command(f'sendkey {key}', timeout=3)
+    if b'unknown key' in response.lower() or b'error' in response.lower():
+        raise RuntimeError(f'QEMU rejected key {key}: {response.decode(errors="replace")}')
+    time.sleep(0.2)
+time.sleep(1)
+print('Sent diagnostic command through XFCE appfinder')
 command('sendkey ret')
 # The diagnostic checks versions, services, X11/D-Bus and Xfconf, then saves a
-# full report under the miniarino user's cache directory. --hold keeps its
-# terminal visible for the diagnostic screenshot.
+# full report under the miniarino user's cache directory. Its Desktop Entry
+# opens the output in a terminal when XFCE resolves the launcher.
 time.sleep(25)
 result=command(f'screendump {screenshot}')
 if b'Error' in result or b'failed' in result.lower(): raise RuntimeError(result.decode(errors='replace'))
