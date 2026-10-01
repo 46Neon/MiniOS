@@ -1,0 +1,64 @@
+MiniAriño bare-metal x86 de 32 bits — inventario
+=================================================
+
+ESTADO: Fase 1 (hitos 1–10) PARCIAL. Hay implementación fuente para el primer
+subgate MBR → stage2/E820/VBE → carga de kernel → protected mode → kernel serial,
+pero no fue ensamblada ni ejecutada en este entorno. No se declara aprobado ni
+completo ningún gate: faltan paginación/LFB alto, allocator, dibujo, fuente
+bitmap y pruebas de aceptación completas.
+
+Archivos realmente presentes
+----------------------------
+- `ARCHIVOS_PROYECTO.txt` — inventario actual; separa implementado de planeado.
+- `ARQUITECTURA.md` — objetivo, límites y gates de plataforma.
+- `REFERENCIA_DEBIAN.md` — referencia Debian preservada; no es backup local.
+- `Makefile` — build independiente en `build/os.img`, `verify` y `qemu-test`.
+- `boot/mbr.asm` — MBR BIOS/EDD que carga ocho sectores de stage2 y firma 55AA.
+- `boot/stage2.asm` — stage2 real de 4096 bytes: E820, intento VBE 640x480x24,
+  lectura de kernel en LBA 9 y transición protegida; aún sin validar con NASM.
+- `include/boot_info.h` — ABI compartido del boot-info y entradas E820.
+- `kernel/entry.asm` — entrada ELF32 y traspaso del boot-info al kernel C.
+- `kernel/kernel.c` — kernel diagnóstico freestanding: serial, valida boot-info,
+  informa mapa/mode y se detiene; no contiene gestión de memoria ni dibujo.
+- `linker/kernel.ld` — layout ELF32 a partir de 0x10000.
+- `tests/check_image.py` — verificación estática de tamaño, sectores y firma.
+- `tests/run_qemu.sh` — prueba SeaBIOS/IDE; exige kernel, E820 y VBE real.
+- `docs/LIMITES_Y_GATES.md` — estado, contrato y gates no acreditados.
+- `.github/workflows/baremetal32.yml` — workflow aislada por paths, build limpio,
+  QEMU y artefactos; su resultado no ha sido observado.
+- `.github/workflows/baremetal32.yml` está en la raíz del repositorio y fuera de
+  este subdirectorio; no modifica el workflow Debian existente.
+
+Artefactos generados (no son fuentes ni existen hasta ejecutar el build)
+-----------------------------------------------------------------------
+- `build/mbr.bin`, `build/stage2.bin`, `build/kernel_entry.o`, `build/kernel.o`,
+  `build/kernel.elf`, `build/kernel.raw`, `build/kernel.bin`, `build/os.img`,
+  `build/qemu-serial.log`.
+
+Pendiente/planeado — no existe todavía
+--------------------------------------
+- Kernel con paginación que mapee LFB físico por encima de 16 MiB, y prueba del
+  mapa de framebuffer alto.
+- `kernel/memory.c`, `include/memory.h`: allocator de frames desde E820 que
+  rechace overflow/entradas inválidas y respete reservas explícitas.
+- `kernel/framebuffer.c`, `include/framebuffer.h`: pixel, rectángulo, clear,
+  pitch/bpp y clipping, con pruebas de límites.
+- `kernel/font.c`, `include/font.h`: bitmap font y renderizado con clipping.
+- Prueba forzada del fallback de texto; prueba real de allocator/RAM sobre
+  16 MiB; screenshot o comprobación legible de salida gráfica; suite que cubra
+  todas las aceptaciones de hitos 1–10.
+- No afirmar que build, verificador o QEMU pasaron hasta obtener logs CI del SHA
+  exacto. Fase 1 permanece abierta hasta pasar todo el gate, no solo el primer
+  subgate de arranque.
+
+Fases futuras (PLANEADAS — no implementar aquí)
+----------------------------------------------
+- FASE 2, hitos 11–18: escritorio y terminal gráfica, teclado y ratón.
+- FASE 3, hitos 19–27: ABI, ring 3, ELF32 y procesos aislados.
+- FASE 4, hitos 28–35: MiniFS v2, rutas, ATA, shell y paquetes.
+- FASE 5, hitos 36–44: e1000, red, HTTP y TLS.
+- FASE 6, hitos 45–50: navegador e integración final.
+
+No modificar la raíz Debian, su imagen o Makefile ni el PR #2 desde este trabajo.
+Cada fase posterior queda bloqueada hasta que el gate completo de Fase 1 pase en
+QEMU/CI para un SHA concreto.

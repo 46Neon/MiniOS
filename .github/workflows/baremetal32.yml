@@ -1,0 +1,51 @@
+name: MiniAriño bare-metal x86-32 Fase 1
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'baremetal32/**'
+      - '.github/workflows/baremetal32.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baremetal32-phase1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boot-subgate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install 32-bit bare-metal build and QEMU tools
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            nasm gcc-multilib binutils qemu-system-x86 python3
+
+      - name: Build clean image and verify disk layout
+        working-directory: baremetal32
+        run: |
+          make clean
+          make verify
+
+      - name: Boot BIOS/SeaBIOS image from IDE in QEMU
+        working-directory: baremetal32
+        run: make qemu-test
+
+      - name: Upload Phase 1 boot-subgate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: miniarino-baremetal32-phase1-${{ github.sha }}
+          path: |
+            baremetal32/build/os.img
+            baremetal32/build/qemu-serial.log
+          if-no-files-found: ignore
+          retention-days: 14
