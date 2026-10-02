@@ -24,6 +24,7 @@ selftest:
 
 test-qemu-runner:
 	./tests/test-run-qemu.sh
+	bash ./tests/test-display-mode.sh
 
 # Preserve any existing os.img; remove only disposable build work files.
 clean:

@@ -4,6 +4,17 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      image_gib:
+        description: Logical disk size in GiB
+        required: true
+        type: choice
+        options:
+          - '8'
+          - '16'
+          - '24'
+          - '32'
+        default: '16'
 
 permissions:
   contents: read
@@ -16,6 +27,8 @@ jobs:
   build-and-test:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    env:
+      MINIARINO_IMAGE_GIB: ${{ inputs.image_gib || '16' }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -71,7 +84,7 @@ jobs:
       - name: Upload verified image artifact
         uses: actions/upload-artifact@v4
         with:
-          name: miniarino-debian13-amd64-${{ github.sha }}
+          name: miniarino-debian13-amd64-${{ env.MINIARINO_IMAGE_GIB }}g-${{ github.sha }}
           path: |
             build/os.img.gz
             build/os.img.gz.sha256

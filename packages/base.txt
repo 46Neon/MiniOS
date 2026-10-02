@@ -9,3 +9,4 @@ initramfs-tools
 grub-common
 grub2-common
 grub-pc-bin
+e2fsprogs

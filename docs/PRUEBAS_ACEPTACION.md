@@ -16,8 +16,8 @@ scripts/desktop-smoke-qemu.sh
 La imagen de CI debe superar, en ese orden:
 
 1. Construcción reproducible con Debian 13 `trixie` amd64, filesystem raíz ext4 y GRUB BIOS en MBR.
-2. Verificación de tamaño raw lógico de 16 GiB, firma MBR `55 AA`, una partición Linux que empieza en LBA 2048, estructura del filesystem, módulos GRUB BIOS, kernel, initramfs, paquetes/binarios XFCE, LightDM/autologin/sesión, enlaces de servicios, wallpaper/configuración, directorios personales, launchers y comandos instalados, configuración del saludo y exactamente tres entradas de menú.
-3. Inicio en QEMU `pc`/SeaBIOS con el disco como IDE, aceleración TCG y VGA estándar; la consola serial debe recibir `MiniAriño bienvenido` dentro del límite de tiempo.
+2. Verificación de tamaño raw lógico configurado (16 GiB por defecto; `MINIARINO_IMAGE_GIB`), geometría de partición, firma MBR `55 AA`, una partición Linux que empieza en LBA 2048, estructura del filesystem, módulos GRUB BIOS, kernel, initramfs, paquetes/binarios XFCE, LightDM/autologin/sesión, enlaces de servicios, wallpaper/configuración, directorios personales, launchers y comandos instalados, configuración del saludo y exactamente tres entradas de menú.
+3. Inicio en QEMU `pc`/SeaBIOS con el disco como IDE, aceleración TCG y VGA estándar; la consola serial debe recibir `MiniAriño bienvenido` dentro del límite de tiempo y no mostrar el error de `fsck.ext4` ausente.
 4. Inicio de un segundo QEMU con VGA/VNC y captura de XFCE. El runner añade temporalmente a la imagen un XDG autostart que ejecuta el diagnóstico en una terminal dentro de la sesión gráfica del usuario normal; después apaga limpiamente, extrae el log y exige `0 FAIL`. La entrada temporal se quita antes de publicar la imagen. Esto no valida el atajo Ctrl+Alt+M ni la interacción de teclado/ratón.
 5. Solo después de los anteriores, compresión `.img.gz`, generación de SHA-256 y subida del artefacto de imagen. Cualquier fallo impide publicar ese artefacto.
 
@@ -40,7 +40,7 @@ En un QEMU gráfico de x86-64, adjuntar la imagen raw como IDE y arrancar en BIO
 
 ## Manual — dispositivo Android / Termux
 
-1. Instalar una build de QEMU de Termux con soporte `qemu-system-x86_64` y reservar almacenamiento para la imagen raw lógica de 16 GiB.
+1. Instalar una build de QEMU de Termux con soporte `qemu-system-x86_64` y reservar almacenamiento para el tamaño lógico configurado (16 GiB por defecto).
 2. Descargar el artefacto `.img.gz` y el SHA-256 del mismo run de Actions; verificarlo antes de expandirlo.
 3. Para Termux:X11, iniciar `termux-x11 :0` y exportar `DISPLAY=:0`; luego ejecutar `./run-termux.sh /ruta/al/os.img.gz`. `QEMU_DISPLAY=auto` prefiere SDL/GTK si hay display y hace fallback a VNC local en `127.0.0.1:5901`. El script exige soporte de `dd conv=sparse` para evitar una expansión completa inesperada.
 4. Completar en el teléfono la lista visual de GRUB, saludo, XFCE, teclado/ratón, red y aplicaciones. Registrar si la tableta USB fue reconocida o si se usó la entrada PS/2.
