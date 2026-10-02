@@ -10,7 +10,14 @@ TMP="$OUT.new"
 WORK="$ROOT/build/work"
 MNT="$WORK/root"
 SUITE="${DEBIAN_SUITE:-trixie}"
-IMAGE_SIZE="16G" # Fixed together with the MBR partition geometry and verifier.
+IMAGE_GIB="${MINIARINO_IMAGE_GIB:-16}"
+if [[ ! "$IMAGE_GIB" =~ ^[1-9][0-9]*$ ]] || (( IMAGE_GIB > 2048 )); then
+  echo "MINIARINO_IMAGE_GIB debe ser un entero entre 1 y 2048 (límite MBR)." >&2
+  exit 2
+fi
+IMAGE_SIZE="${IMAGE_GIB}G"
+IMAGE_SECTORS=$((IMAGE_GIB * 2097152))
+PARTITION_SECTORS=$((IMAGE_SECTORS - 2048))
 DEFAULT_PASSWORD="${MINIARINO_PASSWORD:-miniarino}"
 DEBIAN_KEYRING="${DEBIAN_KEYRING:-/usr/share/keyrings/debian-archive-keyring.gpg}"
 LOOP=""
@@ -48,11 +55,11 @@ trap cleanup EXIT
 
 # Create a fresh sparse raw image; all partitioning is confined to this new file.
 truncate -s "$IMAGE_SIZE" "$TMP"
-cat <<'SFDISK' | sfdisk --wipe always "$TMP"
+cat <<SFDISK | sfdisk --wipe always "$TMP"
 label: dos
 unit: sectors
 sector-size: 512
-start=2048, size=33552384, type=83, bootable
+start=2048, size=${PARTITION_SECTORS}, type=83, bootable
 SFDISK
 
 LOOP="$(losetup --find --show --partscan "$TMP")"

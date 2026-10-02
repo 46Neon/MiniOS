@@ -48,17 +48,33 @@ run_case DISPLAY=:0 QEMU_DISPLAY=auto QEMU_USB_INPUT=auto \
   FAKE_QEMU_DISPLAYS=$'sdl\ngtk\nnone' \
   FAKE_QEMU_DEVICES=$'name "qemu-xhci" bus PCI\nname "usb-tablet" bus usb-bus\nname "usb-kbd" bus usb-bus'
 assert_common_contract
-assert_arg 'sdl'
+assert_arg 'sdl,show-cursor=on'
 assert_arg 'qemu-xhci'
 assert_arg 'usb-tablet'
 assert_arg 'usb-kbd'
 echo 'PASS: auto elige SDL y entrada USB cuando están disponibles.'
 
+# Termux portrait mode: GTK fullscreen scales the guest and keeps the pointer visible.
+run_case DISPLAY=:0 QEMU_DISPLAY=gtk QEMU_FULLSCREEN=on QEMU_USB_INPUT=auto \
+  FAKE_QEMU_DISPLAYS=$'gtk\nnone' \
+  FAKE_QEMU_DEVICES=$'name "qemu-xhci" bus PCI\nname "usb-tablet" bus usb-bus\nname "usb-kbd" bus usb-bus'
+assert_common_contract
+assert_arg 'gtk,show-cursor=on,full-screen=on,zoom-to-fit=on'
+assert_arg 'usb-tablet'
+echo 'PASS: GTK maximizes/scales the guest and enables the absolute tablet.'
+
+run_case DISPLAY=:0 QEMU_DISPLAY=sdl QEMU_FULLSCREEN=on QEMU_USB_INPUT=off \
+  FAKE_QEMU_DISPLAYS=$'sdl\nnone' FAKE_QEMU_DEVICES=''
+assert_common_contract
+assert_arg 'sdl,show-cursor=on'
+assert_arg '-full-screen'
+echo 'PASS: SDL starts fullscreen with the mouse cursor visible.'
+
 # If SDL is absent, auto may use GTK when an X11/Wayland display exists.
 run_case DISPLAY=:0 QEMU_DISPLAY=auto QEMU_USB_INPUT=auto \
   FAKE_QEMU_DISPLAYS=$'gtk\nnone' FAKE_QEMU_DEVICES=''
 assert_common_contract
-assert_arg 'gtk'
+assert_arg 'gtk,show-cursor=on'
 if grep -Fxq 'qemu-xhci' "$ARGS_FILE"; then echo 'No debía agregar USB si faltan dispositivos.' >&2; exit 1; fi
 echo 'PASS: auto usa GTK y cae a PS/2 si no están los USB.'
 
@@ -78,7 +94,7 @@ echo 'PASS: auto usa VNC local si no hay display gráfico.'
 run_case DISPLAY=:0 QEMU_DISPLAY=gtk QEMU_USB_INPUT=off \
   FAKE_QEMU_DISPLAYS=$'gtk\nnone' FAKE_QEMU_DEVICES=''
 assert_common_contract
-assert_arg 'gtk'
+assert_arg 'gtk,show-cursor=on'
 if grep -Fxq 'qemu-xhci' "$ARGS_FILE"; then echo 'USB debía estar desactivado.' >&2; exit 1; fi
 echo 'PASS: respeta backend GTK y QEMU_USB_INPUT=off.'
 

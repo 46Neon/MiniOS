@@ -16,7 +16,12 @@ finish() { kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; }
 trap finish EXIT
 for _ in $(seq 1 150); do
   if grep -aq 'MiniAriño bienvenido' "$LOG" 2>/dev/null; then
-    echo "OK: QEMU arrancó Linux y mostró el saludo en la consola serial."
+    if grep -aq 'fsck: error .* fsck.ext4' "$LOG" 2>/dev/null; then
+      echo 'QEMU arrancó, pero initramfs no encontró fsck.ext4; revisa e2fsprogs.' >&2
+      grep -a 'fsck: error .* fsck.ext4' "$LOG" >&2 || true
+      exit 1
+    fi
+    echo "OK: QEMU arrancó sin el error fsck.ext4 y mostró el saludo."
     exit 0
   fi
   if ! kill -0 "$PID" 2>/dev/null; then

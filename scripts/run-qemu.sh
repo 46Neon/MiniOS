@@ -16,6 +16,11 @@ fi
 RAM="${RAM:-2048}"
 SMP="${SMP:-2}"
 DISPLAY_BACKEND="${QEMU_DISPLAY:-auto}"
+FULLSCREEN="${QEMU_FULLSCREEN:-off}"
+case "$FULLSCREEN" in
+  on|off) ;;
+  *) echo "QEMU_FULLSCREEN debe ser on u off (recibido: $FULLSCREEN)." >&2; exit 2 ;;
+esac
 DISPLAY_HELP="$("$QEMU_BIN" -display help 2>&1 || true)"
 supports_display() {
   local backend="$1"
@@ -48,9 +53,29 @@ if [[ "$DISPLAY_BACKEND" == vnc ]]; then
   VNC_ENDPOINT="${QEMU_VNC:-127.0.0.1:1}"
   DISPLAY_ARGS=(-display none -vnc "$VNC_ENDPOINT")
   printf 'Sin backend de ventana disponible; VNC escuchará en %s (puerto 5901 si usas :1).\n' "$VNC_ENDPOINT"
+  [[ "$FULLSCREEN" == off ]] || echo 'QEMU_FULLSCREEN no aplica al backend VNC.'
 else
-  DISPLAY_ARGS=(-display "$DISPLAY_BACKEND")
+  case "$DISPLAY_BACKEND" in
+    gtk)
+      if [[ "$FULLSCREEN" == on ]]; then
+        DISPLAY_ARGS=(-display 'gtk,show-cursor=on,full-screen=on,zoom-to-fit=on')
+      else
+        DISPLAY_ARGS=(-display 'gtk,show-cursor=on')
+      fi
+      ;;
+    sdl)
+      DISPLAY_ARGS=(-display 'sdl,show-cursor=on')
+      [[ "$FULLSCREEN" == off ]] || DISPLAY_ARGS+=(-full-screen)
+      ;;
+    *)
+      DISPLAY_ARGS=(-display "$DISPLAY_BACKEND")
+      [[ "$FULLSCREEN" == off ]] || echo "Pantalla completa no configurada para '$DISPLAY_BACKEND'."
+      ;;
+  esac
   printf 'Backend gráfico QEMU: %s.\n' "$DISPLAY_BACKEND"
+  if [[ "$FULLSCREEN" == on ]]; then
+    echo 'Pantalla completa y cursor visible habilitados.'
+  fi
   if [[ "$DISPLAY_BACKEND" == sdl || "$DISPLAY_BACKEND" == gtk ]] && [[ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
     echo "No hay DISPLAY/WAYLAND_DISPLAY definido; inicia Termux:X11 y exporta DISPLAY=:0, o usa QEMU_DISPLAY=vnc." >&2
   fi
@@ -66,7 +91,7 @@ case "$USB_INPUT_MODE" in
     has_device() { grep -Fq "name \"$1\"" <<<"$DEVICE_HELP"; }
     if has_device qemu-xhci && has_device usb-tablet && has_device usb-kbd; then
       USB_ARGS=(-device qemu-xhci -device usb-tablet -device usb-kbd)
-      echo "Entrada USB habilitada: tableta y teclado."
+      echo "Entrada USB habilitada: tableta absoluta y teclado."
     elif [[ "$USB_INPUT_MODE" == on ]]; then
       echo "QEMU no incluye qemu-xhci, usb-tablet y usb-kbd; usa QEMU_USB_INPUT=auto o off." >&2
       exit 1
