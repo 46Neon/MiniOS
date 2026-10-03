@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# LEGACY Debian/QEMU image verifier; not used by native Termux.
 """Validate the installed XFCE/LightDM configuration inside a MiniAriño rootfs."""
 from __future__ import annotations
 

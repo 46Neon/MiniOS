@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# LEGACY Debian/QEMU path; not used by the native Termux desktop.
 set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"

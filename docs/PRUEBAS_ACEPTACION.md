@@ -1,4 +1,6 @@
-# Pruebas de aceptación MiniAriño
+# Pruebas de aceptación — ruta heredada Debian/QEMU
+
+> **Histórico/manual.** Este plan corresponde solo a la antigua imagen Debian/QEMU. No valida la ruta principal Termux + Termux:X11. La CI nativa no construye imágenes ni afirma probar la GUI de Android.
 
 Este plan distingue controles automatizados de validación visual e interacción manual. Un artefacto no se considera terminado hasta que se construye desde cero, sus comprobaciones y las capturas de escritorio en QEMU pasan para el mismo commit; la interacción real en Termux sigue siendo una prueba separada. No se afirma que la interacción en el teléfono haya ocurrido solo porque compile o arranque el sistema.
 

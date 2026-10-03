@@ -1,3 +1,4 @@
+# LEGACY ONLY: packages for the archived Debian/QEMU image builder; not Termux packages.
 ca-certificates
 console-setup
 locales

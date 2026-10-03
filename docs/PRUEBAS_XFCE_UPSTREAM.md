@@ -1,4 +1,6 @@
-# Pruebas upstream de Xfce y cobertura MiniAriño
+# Auditoría histórica de pruebas upstream de Xfce
+
+> Contexto anterior a la migración nativa: el texto describe XFCE instalado en Debian/QEMU y las pruebas de aquella propuesta. No certifica el XFCE de Termux ni la experiencia de Android; cualquier conclusión requiere una prueba nueva de dispositivo.
 
 Auditoría focalizada de los 19 proyectos visibles en el grupo oficial [`xfce`](https://gitlab.xfce.org/xfce), sus manifiestos de pruebas y el template compartido `xfce4-dev-tools/ci/build_project.yml`. Consulta: 2026-10-01. No es una revisión línea por línea ni una afirmación de que todas las pruebas upstream pasen en Debian.
 

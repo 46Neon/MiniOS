@@ -1,8 +1,8 @@
-name: Build MiniAriño image
+name: Legacy (manual) Debian/QEMU image build
 
+# Explicitly manual, legacy compatibility path. Native pull-request CI is
+# native-tests.yml and does not install image-builder or Android packages.
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
       image_gib:

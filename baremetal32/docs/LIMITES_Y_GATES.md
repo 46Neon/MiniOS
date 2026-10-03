@@ -1,4 +1,6 @@
-# Estado de implementación y gates — Fase 1 (hitos 1–10)
+# Experimento bare-metal archivado — límites/gates históricos
+
+> No forma parte del escritorio MiniAriño Termux/XFCE. Se conserva la evaluación de la antigua imagen de prueba; su ejecución de build/QEMU es solo manual.
 
 ## Alcance de esta entrega
 
