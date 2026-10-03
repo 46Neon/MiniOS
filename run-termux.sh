@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# LEGACY Debian/QEMU path; not used by the native Termux desktop.
 set -Eeuo pipefail
 if [[ $# -lt 1 ]]; then
   echo "Uso: ./run-termux.sh /ruta/miniarino-amd64.img[.gz]" >&2

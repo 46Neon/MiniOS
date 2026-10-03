@@ -1,4 +1,6 @@
-# Integración de los 50 hitos en una base Linux
+# Integración histórica de los 50 hitos en una base Linux
+
+> Documento heredado de la propuesta Debian/QEMU. No describe el producto principal actual, que es un escritorio nativo Termux/XFCE, ni debe usarse como afirmación de compatibilidad o arquitectura de esa ruta.
 
 La decisión Debian convierte muchos hitos de implementar a **integrar, configurar y verificar**. Los hitos siguen siendo aceptación funcional; la implementación concreta ya no usa el kernel ensamblador antiguo.
 

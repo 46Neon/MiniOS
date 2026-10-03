@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# LEGACY Debian/QEMU path; not used by the native Termux desktop.
 # Run as the logged-in, unprivileged user inside the XFCE desktop session.
 set -uo pipefail
 

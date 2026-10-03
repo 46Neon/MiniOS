@@ -1,11 +1,7 @@
-name: MiniAriño bare-metal x86-32 Fase 1
+name: Legacy (manual) bare-metal x86-32 prototype
 
+# Archived historical prototype; no longer part of product CI or defaults.
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'baremetal32/**'
-      - '.github/workflows/baremetal32.yml'
   workflow_dispatch:
 
 permissions:

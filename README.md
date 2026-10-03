@@ -1,62 +1,80 @@
-# MiniAriño — escritorio Linux para QEMU/Termux
+# MiniAriño — escritorio nativo de Termux + Termux:X11
 
-MiniAriño cambia de estrategia: **Debian 13 amd64 + kernel Linux + XFCE**, con arranque BIOS/SeaBIOS, GRUB y disco IDE en QEMU. Ya no se ampliará el kernel bare-metal de ensamblador para simular Linux. Los fuentes anteriores se archivan bajo `legacy/baremetal/` y no participan en la nueva construcción.
+**Producto principal:** un escritorio XFCE nativo dentro de Termux, mostrado localmente por la aplicación Android Termux:X11. El camino principal no usa imagen de disco, QEMU, PRoot ni una distribución Linux. Tampoco es una APK independiente ni un servidor/backend.
 
-## Estado honesto
+> **Estado de la propuesta:** el usuario probó en un Android ARM64 con Termux 0.118.3 que XFCE nativo inicia y que Chromium abre dentro de Termux:X11. Estos cambios se presentan en una rama/PR separada para revisión; no se fusionan directamente en `main`. No se han completado todas las pruebas de orientación, suspensión/reanudación, almacenamiento ni otros dispositivos.
 
-Esta rama contiene el constructor reproducible, la configuración prevista de Debian/XFCE/GRUB y las pruebas estructurales y de arranque. **La imagen no se considera terminada ni verificada hasta que el workflow la construya, pase sus comprobaciones y se pruebe la interfaz en QEMU/Termux.** El entorno de esta sesión no cuenta con `debootstrap`, dispositivos loop ni QEMU para fabricar y arrancar la imagen aquí.
+## Primer uso en Android
 
-El repositorio MiniOS auditado no incluía la `os.img` que Lennd había probado anteriormente. Por eso el constructor conserva una imagen previa si encuentra `build/os.img`, archivándola bajo `reference/images/` antes de sustituirla, pero no puede preservar la copia local que no se entregó.
+1. Instala Termux y Termux:X11 desde fuentes oficiales compatibles entre sí. Instala/abre la app Android Termux:X11 en el mismo teléfono. No descargues APKs desde este repositorio.
+2. Usa una copia local revisada de este árbol dentro de Termux. Si necesitas clonar el repositorio y no tienes `git`, la instalación de `git` es una decisión tuya; usa `pkg install git` solamente si lo confirmas. No uses `curl | bash`.
+3. Inspecciona las dependencias sin cambiar paquetes:
 
-## Qué integra
+   ```sh
+   ./scripts/termux-native/install.sh --check
+   ```
 
-- Debian 13 `trixie`, amd64, kernel Linux, GRUB para BIOS/MBR y raíz ext4 dentro de una imagen raw dispersa (16 GiB por defecto, tamaño ajustable).
-- Escritorio XFCE/LightDM, Thunar, terminal Bash, Firefox ESR, Synaptic/GDebi, herramientas de desarrollo y `nmap`.
-- Usuario normal `miniarino`, acceso automático al escritorio para la VM de pruebas y saludo de arranque **“MiniAriño bienvenido”**.
-- GRUB con tres opciones: Iniciar MiniAriño, Reiniciar y Apagar.
-- QEMU con disco IDE y tarjeta de red e1000 emulada; la pila de Linux proporciona procesos, memoria virtual, filesystem, sockets, TCP/TLS y compatibilidad ELF de Linux.
+4. Solo si quieres instalar XFCE y el paquete acompañante de Termux:X11, solicita esa acción explícita:
 
-## Construcción
+   ```sh
+   ./scripts/termux-native/install.sh --install
+   ```
 
-La construcción requiere un host Linux amd64 con acceso root, `debootstrap`, el paquete `debian-archive-keyring`, `sfdisk`, `losetup`, `mkfs.ext4`, `mount`, `chroot` y red. **Termux en Android ARM se usa para ejecutar la VM, no para construir su filesystem**: el workflow de GitHub Actions es la vía recomendada.
+   El comando vuelve a pedir confirmación y usa `pkg` de Termux para añadir el repositorio oficial `x11-repo` y solicitar los paquetes seleccionados `termux-x11-nightly` y `xfce`. No añade TUR/repositorios de terceros, no ejecuta `pkg upgrade`, no elimina paquetes y no instala APKs. Comprueba las instrucciones oficiales vigentes para la combinación de app Android y paquetes.
+4a. Chromium es opcional, grande y se instala por separado desde el repositorio oficial `x11-repo` (no instales los paquetes `*-host-tools`). Primero revisa el resumen de `pkg`; el script no ejecuta `pkg upgrade`:
+
+   ```sh
+   ./scripts/termux-native/install.sh --install-chromium
+   ```
+
+   Termux es rolling-release. Si sus bibliotecas están desactualizadas, la configuración de dependencias puede fallar; detente y revisa el diagnóstico antes de actualizar paquetes.
+5. Abre la aplicación Termux:X11; en Termux ejecuta el diagnóstico de solo lectura:
+
+   ```sh
+   ./scripts/termux-native/doctor.sh
+   ```
+
+6. Opcional: para habilitar el panel MiniAriño y los accesos en XFCE, aplica el perfil móvil después de revisar el script. Es aislado, opt-in y reversible:
+
+   ```sh
+   ./scripts/termux-native/mobile-profile.sh --status
+   ./scripts/termux-native/mobile-profile.sh --apply
+   ```
+
+   `--apply` solicita confirmación y conserva una copia de seguridad. No modifica `~/.config/xfce4` ni `~/Desktop`; pone sus archivos propios bajo `~/.config/miniarino-native` y `~/.local/share/miniarino-native`. El perfil experimental incluye un panel XFCE con identidad MiniAriño, menú y accesos Terminal, Archivos (Thunar) y Navegador web. Si Chromium está instalado, el lanzador lo abre dentro de XFCE; si no, entrega URL al navegador Android. Para revertir, primero detén XFCE, ejecuta `mobile-profile.sh --restore` y confirma; se restaura únicamente si los archivos del perfil no cambiaron desde que se aplicó. Si hubo cambios, no los pisa y conserva el respaldo para revisión.
+7. Inicia y detén el escritorio administrado:
+
+   ```sh
+   ./scripts/termux-native/start.sh
+   ./scripts/termux-native/stop.sh
+   ```
+
+   Predeterminado: display `:1`. Variantes opcionales: `MINIOS_X11_DISPLAY=:2 ./scripts/termux-native/start.sh` o `MINIOS_X11_DPI=120 ./scripts/termux-native/start.sh`. DPI es una experimentación, no una recomendación universal. Los targets Make `termux-native-*` son solo conveniencia; `make` a secas no instala, construye ni inicia nada.
+8. El acceso «Navegador web» pide una URL. Con `DISPLAY` activo y el paquete `chromium` instalado, abre `chromium-browser` dentro de XFCE; si no, entrega la URL con `termux-open-url` al navegador Android. El fallback puede abrir fuera del escritorio. La prueba real confirmó que Chromium abre en el X11 del dispositivo; vuelve a validar tras cada actualización.
+9. Para acceso opcional al almacenamiento compartido, ejecuta manualmente `termux-setup-storage` y acepta el permiso de Android. No se solicita ese permiso automáticamente.
+
+El registro de sesión está en `$PREFIX/var/run/minios-native-xfce/session.log`. Termux:X11 debe estar instalada y abierta; `doctor.sh` comprueba el comando de Termux, no puede certificar la app Android ni el dibujo del escritorio.
+
+## Límites y seguridad
+
+- MiniAriño integra XFCE/Thunar/terminal nativos de Termux en el entorno de la propia app; no promete compatibilidad con todas las aplicaciones de escritorio Linux, binarios de otras distribuciones, apps Windows/macOS o dependencias arbitrarias.
+- El sistema de archivos accesible es el de Termux, sujeto a permisos Android. El enlace de almacenamiento compartido requiere permiso explícito del usuario.
+- El perfil móvil presenta una configuración XFCE experimental; la escala, orientación, panel, teclado en pantalla, gestos, rendimiento y comportamiento al reanudar deben ajustarse tras probar el teléfono.
+- Termux:X11 es local al dispositivo. Los scripts no instalan ni configuran VNC/RDP, túneles, servicios de red ni un servidor remoto.
+- Los únicos paquetes instalables por este scaffold son los nombres explícitos que pasan a `pkg`; no usa `apt`, `curl | bash`, `pkg upgrade`, desinstalaciones ni APKs.
+
+## Validación local
+
+Desde la raíz del árbol:
 
 ```sh
-make clean && make
-make verify
+bash -n scripts/termux-native/*.sh tests/test-termux-native.sh
+bash tests/test-termux-native.sh
+make
 ```
 
-`make` reconstruye la imagen cada vez. `make clean` elimina solo temporales: no borra `build/os.img`. Si ya existía una imagen con ese nombre, el constructor la conserva con su hash en `reference/images/` antes de reemplazarla, pero solo después de que la nueva imagen pase su verificación. No subas imágenes privadas o de gran tamaño al historial de Git; usa artefactos/releases.
+La suite usa un `PREFIX`, `HOME`, `pkg` y `termux-open-url` falsos dentro de un directorio temporal. Comprueba rechazos fuera de Termux, cancelación/confirmación de la instalación, entrega HTTP(S) y copia/restauración del perfil. No instala paquetes ni prueba Android, XFCE ni una pantalla gráfica. GitHub Actions ejecuta estas comprobaciones host-safe sin instalar dependencias de compilación.
 
-La salida predeterminada es `build/os.img` (16 GiB lógicos, archivo raw disperso). Puedes elegir otro tamaño entero, entre 1 y 2048 GiB, con `MINIARINO_IMAGE_GIB=24 make`; usa la misma variable en `make verify`. El límite superior corresponde al direccionamiento MBR de 512 bytes y no se ha probado cada tamaño. Para un build de GitHub Actions, ejecuta manualmente el workflow y elige 8, 16, 24 o 32 GiB. El tamaño del archivo comprimido depende de los datos usados; no equivale al tamaño lógico de la imagen.
+## Ruta Debian/QEMU preservada (heredada y manual)
 
-## Prueba en Termux/QEMU
-
-Una vez descargados el artefacto `.img.gz` y este repositorio en Termux, abre Termux:X11 y gira el teléfono a horizontal antes de iniciar QEMU:
-
-```sh
-chmod +x run-termux.sh
-termux-x11 :0 &
-export DISPLAY=:0
-./run-termux.sh /ruta/al/artefacto/os.img.gz
-```
-
-El lanzador usa TCG, 2 vCPU, 2 GiB, VGA estándar, disco IDE, red user-mode con e1000 y agrega tableta absoluta/teclado USB si la build de QEMU los admite. En Termux solicita pantalla completa a la app Termux:X11 y QEMU; con GTK activa `zoom-to-fit` y muestra el cursor. Rota el teléfono a horizontal: XFCE selecciona el modo panorámico más amplio que QEMU anuncie y cae a uno compatible si no existe. Para volver a ventana usa `QEMU_FULLSCREEN=off`; QEMU también permite alternar pantalla completa con Ctrl+Alt+F. `QEMU_DISPLAY=auto` elige SDL/GTK cuando hay un display exportado y esos backends existen; si no, abre VNC en `127.0.0.1:5901`. Para elegirlo explícitamente, usa `QEMU_DISPLAY=sdl`, `QEMU_DISPLAY=gtk` o `QEMU_DISPLAY=vnc`. Puedes desactivar periféricos USB con `QEMU_USB_INPUT=off`, o ajustar `RAM` y `SMP` según el teléfono.
-
-Al expandir `.img.gz`, el script comprueba que `dd` admita `conv=sparse` y se detiene con un aviso si no; así evita reservar todo el tamaño lógico configurado cuando la imagen tiene bloques vacíos. En ARM, x86-64 se emula por software y la interfaz —especialmente Firefox— puede ser lenta; fullscreen y mayor resolución no aceleran el CPU emulado. La disponibilidad exacta de QEMU y Termux:X11 depende de los repositorios y la versión instalados en el dispositivo; esta comprobación local no sustituye la prueba en un teléfono real.
-
-**Cuenta de la imagen de prueba:** usuario `miniarino`, clave inicial `miniarino`; cámbiala inmediatamente con `passwd`. La imagen es para pruebas en VM, no un servidor público. Mantén la red en user-mode y no expongas servicios ni uses credenciales reales.
-
-## Alcance de compatibilidad
-
-MiniAriño ejecuta aplicaciones Linux amd64 empaquetadas para Debian. Puede soportar aplicaciones ELF32 Linux seleccionadas mediante multiarch y dependencias compatibles; eso se validará aparte. **No promete ejecutar aplicaciones nativas de Windows o macOS**, ni todos los binarios Linux de cualquier distribución. Para instalar software, prefiere repositorios Debian/`apt` o paquetes `.deb` de amd64 con firmas verificadas. `nmap` sirve para laboratorios y redes que tengas autorización de auditar; la red NAT de QEMU limita algunos escaneos de la LAN del teléfono.
-
-## Verificación
-
-- `make verify`: tamaño configurado (16 GiB por defecto), tabla MBR y geometría de partición, firma `55 AA`, una partición ext4 Linux, GRUB BIOS, kernel, initramfs, paquetes/binarios XFCE, LightDM/autologin, sesión, servicios, wallpaper y launchers dentro del rootfs.
-- `make selftest`, Ctrl+Alt+M o el acceso «Diagnóstico MiniAriño»: ejecutar **dentro de XFCE** como usuario `miniarino`, nunca como root. Comprueba en vivo sesión, D-Bus/X11, procesos, EWMH, servicios, Xfconf temporal, launchers y operaciones de archivo; guarda el informe en `~/.cache/miniarino-selftest/last.log` y el código de salida en `last.exitcode`. No instala ni ejecuta las pruebas internas upstream de Xfce.
-- `scripts/smoke-qemu.sh`: arranque headless por BIOS y comprobación del saludo en consola serial. No sustituye una prueba visual de XFCE/teclado/ratón.
-- `make test-qemu-runner`: prueba la selección SDL/GTK/VNC y los periféricos con un QEMU simulado; no sustituye la ejecución real en Android.
-- `docs/PRUEBAS_ACEPTACION.md`: pruebas manuales en Termux/QEMU y las limitaciones actuales.
-- `docs/INTEGRACION_50.md`: correspondencia de los 50 hitos con componentes Linux reutilizados.
-
-No marcar como listo un release hasta pasar el workflow y la prueba manual visual en el dispositivo Termux/QEMU.
+Se conservan el constructor Debian, las listas de paquetes de imagen, los scripts QEMU, el workflow y los archivos bare-metal históricos para revisión/compatibilidad; ya no son el producto predeterminado. La imagen se construye únicamente de forma explícita (`make legacy-image`) o al ejecutar manualmente el workflow heredado. No se elimina código fuente ni se usa esa ruta en la instalación nativa. Consulta [`docs/LEGACY_QEMU.md`](docs/LEGACY_QEMU.md) y [`docs/TERMUX_NATIVE_MIGRATION.md`](docs/TERMUX_NATIVE_MIGRATION.md).
