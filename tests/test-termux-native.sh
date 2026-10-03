@@ -79,11 +79,15 @@ printf 'PASS: explicit install calls pkg only for x11-repo and selected XFCE pac
 # Optional Chromium install is separate, explicit, and never upgrades/removes or adds TUR.
 : > "$PKG_CALL_LOG"
 output="$(printf 'n\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install-chromium 2>&1)"
-[[ "$output" == *'Cancelado'* ]]
-[[ ! -s "$PKG_CALL_LOG" ]]
+[[ "$output" == *'Cancelado'* ]] || { printf 'FAIL: Chromium cancellation prompt did not cancel:\n%s\n' "$output" >&2; exit 1; }
+[[ ! -s "$PKG_CALL_LOG" ]] || { printf 'FAIL: pkg called after Chromium cancellation:\n%s\n' "$(cat "$PKG_CALL_LOG")" >&2; exit 1; }
+printf 'PASS: optional Chromium cancellation is side-effect free\n'
 printf 'y\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install-chromium >/dev/null
-[[ "$(cat "$PKG_CALL_LOG")" == $'install x11-repo chromium' ]]
-! grep -Eiq 'upgrade|remove|tur|host-tools' "$PKG_CALL_LOG"
+[[ "$(cat "$PKG_CALL_LOG")" == $'install x11-repo chromium' ]] || { printf 'FAIL: unexpected Chromium pkg calls:\n%s\n' "$(cat "$PKG_CALL_LOG")" >&2; exit 1; }
+if grep -Eiq 'upgrade|remove|tur|host-tools' "$PKG_CALL_LOG"; then
+  printf 'FAIL: Chromium installer called a forbidden package action:\n%s\n' "$(cat "$PKG_CALL_LOG")" >&2
+  exit 1
+fi
 printf 'install x11-repo\ninstall termux-x11-nightly xfce\n' > "$PKG_CALL_LOG"
 printf 'PASS: Chromium install is optional, confirmed, and limited to official x11-repo package\n'
 
@@ -105,10 +109,11 @@ EOF
 chmod +x "$TMP/mock-bin/chromium-browser"
 export CHROMIUM_CALL_LOG="$TMP/chromium-calls.log"
 DISPLAY=:1 TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/browser.sh" https://example.org/native >/dev/null
-for _ in 1 2 3 4 5 6 7 8 9 10; do
+for _ in {1..50}; do
   [[ -s "$CHROMIUM_CALL_LOG" ]] && break
-  sleep 0.05
+  sleep 0.1
 done
+[[ -s "$CHROMIUM_CALL_LOG" ]] || { printf 'FAIL: Chromium launcher did not start the mocked browser within 5 seconds\n' >&2; exit 1; }
 [[ "$(cat "$CHROMIUM_CALL_LOG")" == 'https://example.org/native' ]]
 [[ "$(cat "$URL_CALL_LOG")" == 'https://example.org/path' ]]
 
