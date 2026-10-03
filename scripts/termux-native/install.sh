@@ -48,8 +48,8 @@ EOF
 fi
 
 if [[ "$MODE" == --install-chromium ]]; then
-  if command -v chromium-browser >/dev/null 2>&1; then
-    printf 'Chromium ya está disponible: %s\n' "$(command -v chromium-browser)"
+  if [[ -x "$PREFIX/bin/chromium-browser" ]]; then
+    printf 'Chromium ya está disponible: %s\n' "$PREFIX/bin/chromium-browser"
     exit 0
   fi
   cat <<'EOF'

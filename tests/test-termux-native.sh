@@ -88,6 +88,13 @@ if grep -Eiq 'upgrade|remove|tur|host-tools' "$PKG_CALL_LOG"; then
   printf 'FAIL: Chromium installer called a forbidden package action:\n%s\n' "$(cat "$PKG_CALL_LOG")" >&2
   exit 1
 fi
+# Detect an installed Termux package by its PREFIX path, not an unrelated host command.
+printf '#!/usr/bin/env sh\nexit 0\n' > "$FAKE_PREFIX/bin/chromium-browser"
+chmod +x "$FAKE_PREFIX/bin/chromium-browser"
+: > "$PKG_CALL_LOG"
+output="$(TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install-chromium 2>&1)"
+[[ "$output" == *'ya está disponible'* ]] || { printf 'FAIL: installed Termux Chromium was not recognized:\n%s\n' "$output" >&2; exit 1; }
+[[ ! -s "$PKG_CALL_LOG" ]] || { printf 'FAIL: pkg called despite installed Termux Chromium:\n%s\n' "$(cat "$PKG_CALL_LOG")" >&2; exit 1; }
 printf 'install x11-repo\ninstall termux-x11-nightly xfce\n' > "$PKG_CALL_LOG"
 printf 'PASS: Chromium install is optional, confirmed, and limited to official x11-repo package\n'
 
@@ -102,11 +109,11 @@ env -u DISPLAY TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/browser.
 [[ "$(cat "$URL_CALL_LOG")" == 'https://example.org/path' ]]
 
 # In an X11 session, prefer the Termux-native Chromium executable, not Android handoff.
-cat > "$TMP/mock-bin/chromium-browser" <<'EOF'
+cat > "$FAKE_PREFIX/bin/chromium-browser" <<'EOF'
 #!/usr/bin/env sh
 printf '%s\n' "$*" >> "$CHROMIUM_CALL_LOG"
 EOF
-chmod +x "$TMP/mock-bin/chromium-browser"
+chmod +x "$FAKE_PREFIX/bin/chromium-browser"
 export CHROMIUM_CALL_LOG="$TMP/chromium-calls.log"
 DISPLAY=:1 TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/browser.sh" https://example.org/native >/dev/null
 for _ in {1..50}; do

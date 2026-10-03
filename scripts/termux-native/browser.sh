@@ -12,9 +12,10 @@ fi
 URL="$1"
 [[ "$URL" =~ ^https?://[^[:space:]]+$ ]] || native_die 'solo se aceptan URLs http:// o https:// sin espacios.'
 native_require_termux
-if [[ -n "${DISPLAY:-}" ]] && command -v chromium-browser >/dev/null 2>&1; then
+if [[ -n "${DISPLAY:-}" && -x "$PREFIX/bin/chromium-browser" ]]; then
+  # Use Termux's own executable, not an unrelated host command found on PATH.
   # Detach the GUI browser from a temporary XFCE terminal launcher.
-  nohup chromium-browser "$URL" >/dev/null 2>&1 </dev/null &
+  nohup "$PREFIX/bin/chromium-browser" "$URL" >/dev/null 2>&1 </dev/null &
   printf 'URL abierta en Chromium dentro de XFCE.\n'
 elif command -v termux-open-url >/dev/null 2>&1; then
   termux-open-url "$URL"
