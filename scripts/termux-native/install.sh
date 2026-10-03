@@ -11,6 +11,7 @@ Uso:
   scripts/termux-native/install.sh --check             # solo inspecciona; no instala
   scripts/termux-native/install.sh --install           # solicita instalar XFCE y Termux:X11
   scripts/termux-native/install.sh --install-chromium  # instala Chromium opcional para XFCE
+  scripts/termux-native/install.sh --install-blender   # instala Blender 5 opcional (TUR, terceros)
 
 Requiere que la aplicación Android Termux:X11 ya esté instalada. Este script
 no descarga ni instala APKs y no modifica la configuración del escritorio.
@@ -19,7 +20,7 @@ EOF
 
 MODE="${1:---check}"
 case "$MODE" in
-  --check|--install|--install-chromium) ;;
+  --check|--install|--install-chromium|--install-blender) ;;
   -h|--help) usage; exit 0 ;;
   *) usage >&2; exit 2 ;;
 esac
@@ -43,6 +44,8 @@ Para instalar explícitamente el paquete nativo xfce y el compañero Termux:X11:
   scripts/termux-native/install.sh --install
 Para instalar Chromium de forma opcional y separada:
   scripts/termux-native/install.sh --install-chromium
+Para instalar Blender 5 desde TUR (tercero), de forma opt-in:
+  scripts/termux-native/install.sh --install-blender
 EOF
   exit 0
 fi
@@ -68,6 +71,33 @@ EOF
   esac
   "$PREFIX/bin/pkg" install x11-repo chromium
   printf 'Instalación de Chromium solicitada. En XFCE se abrirá con chromium-browser y DISPLAY activo.\n'
+  exit 0
+fi
+
+if [[ "$MODE" == --install-blender ]]; then
+  [[ "$(uname -m)" == aarch64 ]] || native_die 'la opción blender5 de TUR disponible para este flujo requiere aarch64.'
+  [[ -x "$PREFIX/bin/termux-x11" && -x "$PREFIX/bin/xfce4-session" ]] || native_die 'instala primero Termux:X11 y XFCE con install.sh --install.'
+  if [[ -x "$PREFIX/bin/blender-5.2" ]]; then
+    printf 'Blender ya está disponible: %s\n' "$PREFIX/bin/blender-5.2"
+    exit 0
+  fi
+  cat <<'EOF'
+Esta opción experimental habilitará el repositorio de terceros TUR y solicitará instalar blender5 (AArch64, componente tur-on-device).
+El paquete y sus dependencias son grandes; no se garantiza aceleración GPU ni compatibilidad hasta probarlo en este teléfono.
+TUR no es un repositorio oficial de Termux. No se añade al flujo normal; solo se activa tras esta confirmación.
+No se ejecuta pkg upgrade ni se eliminan paquetes. Si pkg reporta incompatibilidades, detente; TUR puede quedar habilitado y deberás revisarlo aparte.
+EOF
+  if ! IFS= read -r -p '¿Habilitar TUR e instalar Blender 5? [y/N] ' answer; then
+    printf 'Cancelado; no se habilitó TUR ni se instaló Blender.\n'
+    exit 0
+  fi
+  case "$answer" in
+    y|Y|yes|YES|s|S|si|SI|sí|Sí) ;;
+    *) printf 'Cancelado; no se habilitó TUR ni se instaló Blender.\n'; exit 0 ;;
+  esac
+  "$PREFIX/bin/pkg" install tur-repo
+  "$PREFIX/bin/pkg" install blender5
+  printf 'Instalación de Blender solicitada. Comprueba doctor.sh y el menú Gráficos de XFCE; el binario del paquete actual es blender-5.2.\n'
   exit 0
 fi
 
