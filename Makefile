@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 IMAGE := build/os.img
 
-.PHONY: all help native-help termux-native-check termux-native-install termux-native-chromium \
+.PHONY: all help native-help termux-native-check termux-native-install termux-native-chromium termux-native-blender \
         termux-native-start termux-native-stop termux-native-doctor \
         termux-native-profile test test-termux-native image verify run debug \
         selftest test-qemu-runner clean legacy-image legacy-verify legacy-run legacy-debug
@@ -18,6 +18,7 @@ help native-help:
 	  '  make termux-native-check    Inspección sin instalar paquetes' \
 	  '  make termux-native-install  Instalación opt-in; solicita confirmación en Termux' \
 	  '  make termux-native-chromium Instalar Chromium opcional en XFCE (Termux)' \
+	  '  make termux-native-blender  Instalar Blender experimental (TUR, solicita confirmación)' \
 	  '  make termux-native-doctor   Diagnóstico de solo lectura' \
 	  '  make termux-native-profile Aplicar perfil móvil aislado y reversible' \
 	  '  make termux-native-start    Iniciar XFCE en Termux:X11' \
@@ -37,6 +38,9 @@ termux-native-install:
 
 termux-native-chromium:
 	./scripts/termux-native/install.sh --install-chromium
+
+termux-native-blender:
+	./scripts/termux-native/install.sh --install-blender
 
 termux-native-start:
 	./scripts/termux-native/start.sh

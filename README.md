@@ -2,7 +2,7 @@
 
 **Producto principal:** un escritorio XFCE nativo dentro de Termux, mostrado localmente por la aplicación Android Termux:X11. El camino principal no usa imagen de disco, QEMU, PRoot ni una distribución Linux. Tampoco es una APK independiente ni un servidor/backend.
 
-> **Estado de la propuesta:** el usuario probó en un Android ARM64 con Termux 0.118.3 que XFCE nativo inicia y que Chromium abre dentro de Termux:X11. Estos cambios se presentan en una rama/PR separada para revisión; no se fusionan directamente en `main`. No se han completado todas las pruebas de orientación, suspensión/reanudación, almacenamiento ni otros dispositivos.
+> **Estado:** el escritorio XFCE nativo y Chromium ya están en `main`; el usuario confirmó que ambos funcionan en un Android ARM64 con Termux 0.118.3. La opción experimental de Blender mediante TUR se revisa por separado y aún necesita prueba en el teléfono. Orientación, suspensión/reanudación, almacenamiento y otros dispositivos siguen pendientes de aceptación completa.
 
 ## Primer uso en Android
 
@@ -28,6 +28,13 @@
    ```
 
    Termux es rolling-release. Si sus bibliotecas están desactualizadas, la configuración de dependencias puede fallar; detente y revisa el diagnóstico antes de actualizar paquetes.
+4b. Blender es una opción experimental separada. Solo si aceptas TUR (repositorio de terceros) y las dependencias grandes, ejecuta:
+
+   ```sh
+   ./scripts/termux-native/install.sh --install-blender
+   ```
+
+   La acción pide confirmación, se limita a AArch64 y solicita `blender5` desde `tur-on-device`; no forma parte del instalador normal ni ejecuta `pkg upgrade`. El paquete instala un lanzador XFCE versionado (`blender-5.2` en el paquete comprobado), pero GPU, consumo de memoria y estabilidad aún deben probarse en el teléfono. Si `pkg` muestra errores de bibliotecas, detente; el script no repara el sistema automáticamente.
 5. Abre la aplicación Termux:X11; en Termux ejecuta el diagnóstico de solo lectura:
 
    ```sh
@@ -41,7 +48,7 @@
    ./scripts/termux-native/mobile-profile.sh --apply
    ```
 
-   `--apply` solicita confirmación y conserva una copia de seguridad. No modifica `~/.config/xfce4` ni `~/Desktop`; pone sus archivos propios bajo `~/.config/miniarino-native` y `~/.local/share/miniarino-native`. El perfil experimental incluye un panel XFCE con identidad MiniAriño, menú y accesos Terminal, Archivos (Thunar) y Navegador web. Si Chromium está instalado, el lanzador lo abre dentro de XFCE; si no, entrega URL al navegador Android. Para revertir, primero detén XFCE, ejecuta `mobile-profile.sh --restore` y confirma; se restaura únicamente si los archivos del perfil no cambiaron desde que se aplicó. Si hubo cambios, no los pisa y conserva el respaldo para revisión.
+   `--apply` solicita confirmación y conserva una copia de seguridad. No modifica `~/.config/xfce4` ni `~/Desktop`; pone sus archivos propios bajo `~/.config/miniarino-native` y `~/.local/share/miniarino-native`. El perfil experimental incluye un panel XFCE con identidad MiniAriño, menú y accesos Terminal, Archivos (Thunar) y Navegador web. Si Chromium está instalado, el lanzador lo abre dentro de XFCE; si no, entrega URL al navegador Android. Si instalas Blender por la opción experimental, su propio archivo de escritorio debe aparecer en el menú Gráficos de XFCE. Para revertir, primero detén XFCE, ejecuta `mobile-profile.sh --restore` y confirma; se restaura únicamente si los archivos del perfil no cambiaron desde que se aplicó. Si hubo cambios, no los pisa y conserva el respaldo para revisión.
 7. Inicia y detén el escritorio administrado:
 
    ```sh

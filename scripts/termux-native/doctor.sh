@@ -27,6 +27,12 @@ else
   printf 'AVISO   no se detectó Chromium ni termux-open-url; abre un navegador manualmente.\n'
 fi
 
+if [[ -x "$PREFIX/bin/blender-5.2" ]]; then
+  printf 'BLENDER: disponible en %s; aceleración gráfica y estabilidad aún requieren prueba física.\n' "$PREFIX/bin/blender-5.2"
+else
+  printf 'BLENDER: no instalado (opcional; requiere autorizar el repositorio externo TUR con install.sh --install-blender).\n'
+fi
+
 if [[ -d "$HOME/storage/shared" ]]; then
   printf 'Almacenamiento Android: existe %s (la accesibilidad depende de permisos Android).\n' "$HOME/storage/shared"
 else

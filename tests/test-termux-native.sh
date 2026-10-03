@@ -98,6 +98,26 @@ output="$(TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" -
 printf 'install x11-repo\ninstall termux-x11-nightly xfce\n' > "$PKG_CALL_LOG"
 printf 'PASS: Chromium install is optional, confirmed, and limited to official x11-repo package\n'
 
+# Blender is a separate opt-in path that explicitly adds third-party TUR only after confirmation.
+for item in termux-x11 xfce4-session; do
+  printf '#!/usr/bin/env sh\nexit 0\n' > "$FAKE_PREFIX/bin/$item"
+  chmod +x "$FAKE_PREFIX/bin/$item"
+done
+cat > "$TMP/mock-bin/uname" <<'EOF'
+#!/usr/bin/env sh
+if [ "${1:-}" = '-m' ]; then printf 'aarch64\n'; else /usr/bin/uname "$@"; fi
+EOF
+chmod +x "$TMP/mock-bin/uname"
+: > "$PKG_CALL_LOG"
+output="$(printf 'n\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install-blender 2>&1)"
+[[ "$output" == *'Cancelado'* ]] || { printf 'FAIL: Blender cancellation prompt did not cancel:\\n%s\\n' "$output" >&2; exit 1; }
+[[ ! -s "$PKG_CALL_LOG" ]] || { printf 'FAIL: pkg called after Blender cancellation\\n' >&2; exit 1; }
+printf 'y\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install-blender >/dev/null
+[[ "$(cat "$PKG_CALL_LOG")" == $'install tur-repo\ninstall blender5' ]] || { printf 'FAIL: unexpected Blender package calls:\n%s\n' "$(cat "$PKG_CALL_LOG")" >&2; exit 1; }
+! grep -Eiq 'upgrade|remove' "$PKG_CALL_LOG"
+printf 'install x11-repo\ninstall termux-x11-nightly xfce\n' > "$PKG_CALL_LOG"
+printf 'PASS: Blender is a confirmed, separate TUR/AArch64 install; base path stays unchanged\n'
+
 # Mock the external Android browser handoff; no browser or network is run.
 cat > "$TMP/mock-bin/termux-open-url" <<'EOF'
 #!/usr/bin/env sh
