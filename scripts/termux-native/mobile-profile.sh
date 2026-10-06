@@ -16,7 +16,8 @@ El perfil es opt-in. XFCE lo carga desde XDG_CONFIG_HOME y XDG_DATA_HOME privado
 no modifica ~/.config/xfce4 ni ~/Desktop. Añade un panel con menú y accesos grandes
 para terminal, archivos y navegación web: Chromium en XFCE si está instalado; en caso contrario,
 entrega la URL al navegador Android. La compatibilidad
-visual/táctil y la ubicación del panel deben verificarse en el teléfono.
+visual/táctil y la ubicación del panel deben verificarse en el teléfono. Añade un acceso
+Godot al menú MiniAriño; Godot se instala por separado con install.sh --install-godot.
 EOF
 }
 MODE="${1:-}"
@@ -35,8 +36,9 @@ PANEL_REL='config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml'
 TERMINAL_REL='data/applications/miniarino-terminal.desktop'
 FILES_REL='data/applications/miniarino-files.desktop'
 BROWSER_REL='data/applications/miniarino-browser-handoff.desktop'
+GODOT_REL='data/applications/miniarino-godot.desktop'
 HELPER_REL='data/bin/miniarino-browser-prompt'
-REL_PATHS=("$PANEL_REL" "$TERMINAL_REL" "$FILES_REL" "$BROWSER_REL" "$HELPER_REL")
+REL_PATHS=("$PANEL_REL" "$TERMINAL_REL" "$FILES_REL" "$BROWSER_REL" "$GODOT_REL" "$HELPER_REL")
 MANIFEST="$CONFIG_ROOT/profile.manifest"
 ENABLED="$CONFIG_ROOT/profile.enabled"
 
@@ -74,7 +76,7 @@ ensure_dirs() {
     mkdir -p -- "$path"
     check_no_symlink "$path"
   done
-  for rel in "$PANEL_REL" "$TERMINAL_REL" "$FILES_REL" "$BROWSER_REL" "$HELPER_REL"; do
+  for rel in "$PANEL_REL" "$TERMINAL_REL" "$FILES_REL" "$BROWSER_REL" "$GODOT_REL" "$HELPER_REL"; do
     path="$(path_for "$rel")"
     parent="$(dirname -- "$path")"
     check_parent_chain "$parent"
@@ -233,10 +235,22 @@ Terminal=false
 Categories=Network;WebBrowser;
 StartupNotify=true
 EOF
+  cat > "$backup/generated/$GODOT_REL" <<'EOF'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=MiniAriño — Godot Engine
+Comment=Abrir el editor Godot 4 en el escritorio XFCE
+Exec=godot --editor
+Icon=applications-games
+Terminal=false
+Categories=Development;IDE;Game;
+StartupNotify=true
+EOF
   cp -- "$SCRIPT_DIR/browser-prompt.sh" "$backup/generated/$HELPER_REL"
   chmod 755 "$backup/generated/$HELPER_REL"
   chmod 644 "$backup/generated/$PANEL_REL" "$backup/generated/$TERMINAL_REL" \
-    "$backup/generated/$FILES_REL" "$backup/generated/$BROWSER_REL"
+    "$backup/generated/$FILES_REL" "$backup/generated/$BROWSER_REL" "$backup/generated/$GODOT_REL"
   printf 'backup_id=%s\n' "$backup_id" > "$MANIFEST.tmp.$$"
   chmod 600 "$MANIFEST.tmp.$$"
   mv -- "$MANIFEST.tmp.$$" "$MANIFEST"
@@ -285,10 +299,13 @@ while IFS=$'\t' read -r kind rel; do
   fi
 done < "$backup/manifest"
 for rel in "${REL_PATHS[@]}"; do
+  if [[ -z "${BACKUP_STATES[$rel]:-}" ]]; then
+    [[ "$rel" == "$GODOT_REL" ]] && continue
+    native_die "falta una entrada de respaldo para $rel; no se revirtió ningún archivo."
+  fi
   target="$(path_for "$rel")"
   generated="$backup/generated/$rel"
   check_parent_chain "$generated"
-  [[ -n "${BACKUP_STATES[$rel]:-}" ]] || native_die "falta una entrada de respaldo para $rel; no se revirtió ningún archivo."
   [[ ! -L "$target" && -f "$target" && -f "$generated" && ! -L "$generated" ]] || native_die "estado incompleto o inseguro; no se revirtió ningún archivo: $target"
   cmp -s -- "$target" "$backup/generated/$rel" || native_die "el perfil cambió desde que se aplicó; no se sobreescribió $target. La copia sigue en $backup"
 done
@@ -300,6 +317,7 @@ fi
 case "$answer" in y|Y|yes|YES|s|S|si|SI|sí|Sí) ;; *) printf 'Cancelado; no se cambió el perfil.\n'; exit 0 ;; esac
 
 for rel in "${REL_PATHS[@]}"; do
+  [[ -n "${BACKUP_STATES[$rel]:-}" ]] || continue
   target="$(path_for "$rel")"
   if [[ "${BACKUP_STATES[$rel]}" == EXISTS ]]; then
     original="$backup/original/$rel"

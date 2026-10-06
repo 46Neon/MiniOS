@@ -44,7 +44,6 @@ expect_termux_refusal() {
 expect_termux_refusal 'installer check' "$SCRIPTS/install.sh" --check
 expect_termux_refusal 'installer install' "$SCRIPTS/install.sh" --install
 expect_termux_refusal 'installer Godot' "$SCRIPTS/install.sh" --install-godot
-expect_termux_refusal 'installer desktop apps' "$SCRIPTS/install.sh" --install-desktop-apps
 expect_termux_refusal 'doctor' "$SCRIPTS/doctor.sh"
 expect_termux_refusal 'start' "$SCRIPTS/start.sh"
 expect_termux_refusal 'stop' "$SCRIPTS/stop.sh"
@@ -56,7 +55,7 @@ printf 'PASS: all commands reject non-Termux before package, session, or profile
 
 # Check/status/doctor modes are read-only and leave the fake package log untouched.
 check_output="$(TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --check)"
-[[ "$check_output" == *'--install-godot'* && "$check_output" == *'--install-desktop-apps'* ]]
+[[ "$check_output" == *'--install-godot'* ]]
 TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/mobile-profile.sh" --status >/dev/null
 [[ ! -e "$FAKE_HOME/.config" ]]
 for item in termux-x11 xfce4-session xfce4-panel dbus-launch thunar xfce4-terminal; do
@@ -130,15 +129,6 @@ doctor_output="$(TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/doctor
 [[ ! -s "$PKG_CALL_LOG" ]]
 printf 'PASS: Godot 4 install is opt-in, recognized when present, reported read-only, and uses official x11-repo without TUR\n'
 
-# The convenience bundle installs the same official apps plus opt-in TUR Blender only after consent.
-: > "$PKG_CALL_LOG"
-output="$(printf 'n\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install-desktop-apps 2>&1)"
-[[ "$output" == *'Cancelado'* && ! -s "$PKG_CALL_LOG" ]]
-printf 'y\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install-desktop-apps >/dev/null
-[[ "$(cat "$PKG_CALL_LOG")" == $'install x11-repo chromium godot\ninstall tur-repo\ninstall blender5' ]] || { printf 'FAIL: unexpected desktop-app bundle calls:\n%s\n' "$(cat "$PKG_CALL_LOG")" >&2; exit 1; }
-! grep -Eiq 'upgrade|remove' "$PKG_CALL_LOG"
-printf 'PASS: desktop-app bundle is explicitly confirmed and only then enables TUR for Blender\n'
-
 : > "$PKG_CALL_LOG"
 output="$(printf 'n\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install-blender 2>&1)"
 [[ "$output" == *'Cancelado'* ]] || { printf 'FAIL: Blender cancellation prompt did not cancel:\\n%s\\n' "$output" >&2; exit 1; }
@@ -198,6 +188,8 @@ output="$(printf 'y\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPT
 grep -Fq 'MiniAriño' "$PANEL"
 grep -Fq 'miniarino-browser-handoff.desktop' "$PANEL"
 grep -Fq 'Name=MiniAriño — Terminal' "$FAKE_HOME/.local/share/miniarino-native/applications/miniarino-terminal.desktop"
+grep -Fq 'Name=MiniAriño — Godot Engine' "$FAKE_HOME/.local/share/miniarino-native/applications/miniarino-godot.desktop"
+grep -Fq 'Exec=godot --editor' "$FAKE_HOME/.local/share/miniarino-native/applications/miniarino-godot.desktop"
 grep -Fq 'termux-open-url' "$FAKE_HOME/.local/share/miniarino-native/bin/miniarino-browser-prompt"
 [[ "$(cat "$PKG_CALL_LOG")" == $'install x11-repo\ninstall termux-x11-nightly xfce' ]]
 printf 'PASS: confirmed mobile profile is isolated, branded, touch-sized, and backed up\n'
@@ -219,7 +211,21 @@ output="$(printf 'y\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPT
 [[ "$(cat "$PANEL")" == 'pre-existing-profile-setting' ]]
 [[ ! -e "$FAKE_HOME/.config/miniarino-native/profile.enabled" ]]
 [[ ! -e "$FAKE_HOME/.local/share/miniarino-native/applications/miniarino-terminal.desktop" ]]
+[[ ! -e "$FAKE_HOME/.local/share/miniarino-native/applications/miniarino-godot.desktop" ]]
 [[ ! -e "$FAKE_HOME/.local/share/miniarino-native/bin/miniarino-browser-prompt" ]]
 [[ -d "$backup" ]]
 printf 'PASS: restore preserves post-apply edits by refusing conflicts and restores original files\n'
+
+# A profile created by an older release has no Godot path in its backup manifest.
+printf 'y\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/mobile-profile.sh" --apply >/dev/null
+legacy_id="$(sed -n 's/^backup_id=//p' "$FAKE_HOME/.config/miniarino-native/profile.manifest")"
+legacy_backup="$FAKE_HOME/.local/share/miniarino-native-backups/$legacy_id"
+grep -v 'miniarino-godot.desktop' "$legacy_backup/manifest" > "$legacy_backup/manifest.tmp"
+mv "$legacy_backup/manifest.tmp" "$legacy_backup/manifest"
+rm -f "$legacy_backup/generated/data/applications/miniarino-godot.desktop"
+rm -f "$FAKE_HOME/.local/share/miniarino-native/applications/miniarino-godot.desktop"
+output="$(printf 'y\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/mobile-profile.sh" --restore 2>&1)"
+[[ "$output" == *'Perfil revertido'* ]]
+[[ "$(cat "$PANEL")" == 'pre-existing-profile-setting' ]]
+printf 'PASS: older mobile-profile backups restore when they have no Godot launcher entry\n'
 printf 'PASS: host-safe native tests complete; no Android GUI was tested\n'

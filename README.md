@@ -42,13 +42,6 @@
    ```
 
    El instalador confirma antes de llamar `pkg install x11-repo godot`; no habilita TUR. La instalación del paquete no demuestra que el editor gráfico funcione: valida `godot --version` y abre el editor dentro de XFCE en el propio teléfono. Compatibilidad con Termux:X11/llvmpipe, estabilidad, memoria y aceleración GPU no están garantizadas y siguen pendientes de prueba en dispositivo.
-4d. Si quieres solicitar Chromium, Godot 4 y Blender 5 juntos, usa el atajo opt-in:
-
-   ```sh
-   ./scripts/termux-native/install.sh --install-desktop-apps
-   ```
-
-   Este comando pide una confirmación explícita antes de instalar Chromium y Godot desde `x11-repo` y habilitar TUR (tercero) para Blender. Revisa cada resumen de `pkg`; las descargas y dependencias pueden ser grandes. La instalación normal no instala ninguna de estas aplicaciones ni habilita TUR. También puedes conservar las opciones independientes de Chromium, Godot y Blender descritas arriba.
 5. Abre la aplicación Termux:X11; en Termux ejecuta el diagnóstico de solo lectura:
 
    ```sh
@@ -62,7 +55,7 @@
    ./scripts/termux-native/mobile-profile.sh --apply
    ```
 
-   `--apply` solicita confirmación y conserva una copia de seguridad. No modifica `~/.config/xfce4` ni `~/Desktop`; pone sus archivos propios bajo `~/.config/miniarino-native` y `~/.local/share/miniarino-native`. El perfil experimental incluye un panel XFCE con identidad MiniAriño, menú y accesos Terminal, Archivos (Thunar) y Navegador web. Si Chromium está instalado, el lanzador lo abre dentro de XFCE; si no, entrega URL al navegador Android. Blender y Godot no se instalan ni se fuerzan como accesos del perfil: busca las aplicaciones en el menú normal de XFCE si sus paquetes proveen archivos `.desktop`; el diagnóstico solo confirma la presencia de comandos, no que sus ventanas gráficas funcionen. Para revertir, primero detén XFCE, ejecuta `mobile-profile.sh --restore` y confirma; se restaura únicamente si los archivos del perfil no cambiaron desde que se aplicó. Si hubo cambios, no los pisa y conserva el respaldo para revisión.
+   `--apply` solicita confirmación y conserva una copia de seguridad. No modifica `~/.config/xfce4` ni `~/Desktop`; pone sus archivos propios bajo `~/.config/miniarino-native` y `~/.local/share/miniarino-native`. El perfil experimental incluye un panel XFCE con identidad MiniAriño, menú y accesos Terminal, Archivos (Thunar) y Navegador web. Si Chromium está instalado, el lanzador lo abre dentro de XFCE; si no, entrega URL al navegador Android. El perfil añade una entrada propia de Godot al menú MiniAriño; instala Godot antes de aplicarlo para que el acceso funcione. La entrada del perfil no instala Godot. Blender conserva el acceso que aporta su paquete en el menú de XFCE. El diagnóstico solo confirma la presencia de comandos, no que las ventanas gráficas funcionen. Para revertir, primero detén XFCE, ejecuta `mobile-profile.sh --restore` y confirma; se restaura únicamente si los archivos del perfil no cambiaron desde que se aplicó. Si hubo cambios, no los pisa y conserva el respaldo para revisión.
 7. Inicia y detén el escritorio administrado:
 
    ```sh
