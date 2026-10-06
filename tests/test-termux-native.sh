@@ -43,6 +43,8 @@ expect_termux_refusal() {
 
 expect_termux_refusal 'installer check' "$SCRIPTS/install.sh" --check
 expect_termux_refusal 'installer install' "$SCRIPTS/install.sh" --install
+expect_termux_refusal 'installer Godot' "$SCRIPTS/install.sh" --install-godot
+expect_termux_refusal 'installer desktop apps' "$SCRIPTS/install.sh" --install-desktop-apps
 expect_termux_refusal 'doctor' "$SCRIPTS/doctor.sh"
 expect_termux_refusal 'start' "$SCRIPTS/start.sh"
 expect_termux_refusal 'stop' "$SCRIPTS/stop.sh"
@@ -53,7 +55,8 @@ expect_termux_refusal 'mobile profile' "$SCRIPTS/mobile-profile.sh" --apply
 printf 'PASS: all commands reject non-Termux before package, session, or profile changes\n'
 
 # Check/status/doctor modes are read-only and leave the fake package log untouched.
-TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --check >/dev/null
+check_output="$(TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --check)"
+[[ "$check_output" == *'--install-godot'* && "$check_output" == *'--install-desktop-apps'* ]]
 TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/mobile-profile.sh" --status >/dev/null
 [[ ! -e "$FAKE_HOME/.config" ]]
 for item in termux-x11 xfce4-session xfce4-panel dbus-launch thunar xfce4-terminal; do
@@ -108,6 +111,34 @@ cat > "$TMP/mock-bin/uname" <<'EOF'
 if [ "${1:-}" = '-m' ]; then printf 'aarch64\n'; else /usr/bin/uname "$@"; fi
 EOF
 chmod +x "$TMP/mock-bin/uname"
+
+# Godot is opt-in from the official x11-repo; it must not enable third-party TUR.
+: > "$PKG_CALL_LOG"
+output="$(printf 'n\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install-godot 2>&1)"
+[[ "$output" == *'Cancelado'* ]] || { printf 'FAIL: Godot cancellation prompt did not cancel:\n%s\n' "$output" >&2; exit 1; }
+[[ ! -s "$PKG_CALL_LOG" ]] || { printf 'FAIL: pkg called after Godot cancellation\n' >&2; exit 1; }
+printf 'y\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install-godot >/dev/null
+[[ "$(cat "$PKG_CALL_LOG")" == $'install x11-repo godot' ]] || { printf 'FAIL: unexpected Godot package call:\n%s\n' "$(cat "$PKG_CALL_LOG")" >&2; exit 1; }
+! grep -Eiq 'upgrade|remove|tur' "$PKG_CALL_LOG"
+printf '#!/usr/bin/env sh\nexit 0\n' > "$FAKE_PREFIX/bin/godot"
+chmod +x "$FAKE_PREFIX/bin/godot"
+: > "$PKG_CALL_LOG"
+output="$(TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install-godot 2>&1)"
+[[ "$output" == *'Godot ya está disponible'* && ! -s "$PKG_CALL_LOG" ]]
+doctor_output="$(TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/doctor.sh")"
+[[ "$doctor_output" == *"GODOT: comando disponible en $FAKE_PREFIX/bin/godot"* ]]
+[[ ! -s "$PKG_CALL_LOG" ]]
+printf 'PASS: Godot 4 install is opt-in, recognized when present, reported read-only, and uses official x11-repo without TUR\n'
+
+# The convenience bundle installs the same official apps plus opt-in TUR Blender only after consent.
+: > "$PKG_CALL_LOG"
+output="$(printf 'n\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install-desktop-apps 2>&1)"
+[[ "$output" == *'Cancelado'* && ! -s "$PKG_CALL_LOG" ]]
+printf 'y\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install-desktop-apps >/dev/null
+[[ "$(cat "$PKG_CALL_LOG")" == $'install x11-repo chromium godot\ninstall tur-repo\ninstall blender5' ]] || { printf 'FAIL: unexpected desktop-app bundle calls:\n%s\n' "$(cat "$PKG_CALL_LOG")" >&2; exit 1; }
+! grep -Eiq 'upgrade|remove' "$PKG_CALL_LOG"
+printf 'PASS: desktop-app bundle is explicitly confirmed and only then enables TUR for Blender\n'
+
 : > "$PKG_CALL_LOG"
 output="$(printf 'n\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install-blender 2>&1)"
 [[ "$output" == *'Cancelado'* ]] || { printf 'FAIL: Blender cancellation prompt did not cancel:\\n%s\\n' "$output" >&2; exit 1; }
