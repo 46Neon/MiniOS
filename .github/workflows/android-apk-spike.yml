@@ -35,6 +35,9 @@ jobs:
       - name: Install Android build components
         run: sdkmanager --install 'platforms;android-34' 'build-tools;34.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
 
+      - name: Apply pinned upstream DSL compatibility patch
+        run: python3 android/scripts/prepare_x11.py
+
       - name: Build the single-package ARM64 debug APK
         run: android/vendor/termux-x11/gradlew -p android --no-daemon :app:assembleDebug
 

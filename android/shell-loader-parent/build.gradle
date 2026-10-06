@@ -1,0 +1,1 @@
+// Empty parent project. The embedded APK uses :lorie directly and does not build the separate shell-loader APK.
