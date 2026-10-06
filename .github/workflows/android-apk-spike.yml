@@ -1,0 +1,52 @@
+name: Standalone APK X11 integration spike
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.gitmodules'
+      - 'android/**'
+      - '.github/workflows/android-apk-spike.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-arm64-debug-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out MiniAriño and upstream X11 source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build components
+        run: sdkmanager --install 'platforms;android-34' 'build-tools;34.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
+
+      - name: Build the single-package ARM64 debug APK
+        run: android/vendor/termux-x11/gradlew -p android --no-daemon :app:assembleDebug
+
+      - name: Verify package identity and artifact
+        run: |
+          apk='android/app/build/outputs/apk/debug/app-debug.apk'
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$apk" | grep -F "package: name='org.miniarino.desktop'"
+          echo "APK_SHA256=$(sha256sum "$apk" | cut -d ' ' -f 1)" >> "$GITHUB_ENV"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: miniarino-embedded-x11-debug-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

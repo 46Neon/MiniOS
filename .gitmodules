@@ -1,0 +1,3 @@
+[submodule "android/vendor/termux-x11"]
+	path = android/vendor/termux-x11
+	url = https://github.com/termux/termux-x11.git

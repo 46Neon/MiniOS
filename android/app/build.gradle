@@ -1,0 +1,24 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'org.miniarino.desktop'
+    compileSdkVersion 34
+    ndkVersion '29.0.14206865'
+
+    defaultConfig {
+        applicationId 'org.miniarino.desktop'
+        minSdkVersion 24
+        targetSdkVersion 34
+        versionCode 1
+        versionName '0.1.0-x11-spike'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation project(':lorie')
+}
