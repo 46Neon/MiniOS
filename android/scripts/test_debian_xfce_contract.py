@@ -55,6 +55,16 @@ def main():
         raise SystemExit("PRoot desktop must target Lorie :0 and share its app-private /tmp socket directory")
     if '"XKB_CONFIG_ROOT"' not in activity or 'usr/share/X11/xkb' not in activity or 'X0' not in activity:
         raise SystemExit("Lorie must be given Debian's installed XKB data and its X11 socket must be awaited")
+    lorie_patch = (ROOT / "scripts/prepare_x11.py").read_text(encoding="utf-8")
+    for identity_fix in (
+        "Preferences belong to the installed host app",
+        "prefsCtx = this;",
+        "getPackageNameForUid()",
+        "intent.setPackage(getPackageNameForUid());",
+        "i.setPackage(CmdEntryPoint.getPackageNameForUid());",
+    ):
+        if identity_fix not in lorie_patch:
+            raise SystemExit(f"Pinned Lorie package identity patch is missing: {identity_fix}")
     gradle = (ROOT / "app/build.gradle").read_text(encoding="utf-8")
     if "targetSdkVersion 28" not in gradle:
         raise SystemExit("Writable app-private PRoot execution requires the legacy targetSdkVersion 28")
