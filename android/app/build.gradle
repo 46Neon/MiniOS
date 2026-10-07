@@ -5,11 +5,6 @@ android {
     compileSdk 34
     ndkVersion '29.0.14206865'
 
-    // HomeActivity uses this flag to expose the host-proof entry only in debug builds.
-    buildFeatures {
-        buildConfig true
-    }
-
     defaultConfig {
         applicationId 'org.miniarino.desktop'
         // Android 8.0 (API 26) is the supported minimum for the sideload prototype.
@@ -24,8 +19,8 @@ android {
         if (project.hasProperty('miniarinoAbiFilter')) {
             ndk { abiFilters project.property('miniarinoAbiFilter').toString() }
         }
-        versionCode 3
-        versionName '0.3.0-xfce-exec-fix'
+        versionCode 4
+        versionName '0.3.1-oci-manifest-verify'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 

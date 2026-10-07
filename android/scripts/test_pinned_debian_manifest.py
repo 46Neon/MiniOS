@@ -63,6 +63,12 @@ def main():
     validate(fixture)
 
     cases = []
+    changed = copy.deepcopy(fixture); changed["mediaType"] = "application/json"; cases.append((changed, "wrong manifest media type"))
+    changed = copy.deepcopy(fixture); changed["config"]["mediaType"] = "application/octet-stream"; cases.append((changed, "wrong config media type"))
+    changed = copy.deepcopy(fixture); changed["config"]["digest"] = "sha256:" + "0" * 64; cases.append((changed, "wrong config descriptor digest"))
+    changed = copy.deepcopy(fixture); changed["config"]["size"] += 1; cases.append((changed, "wrong config descriptor size"))
+    changed = copy.deepcopy(fixture); image = json.loads(base64.b64decode(changed["config"]["data"])); image["rootfs"]["type"] = "unknown"; config_bytes = json.dumps(image, separators=(",", ":")).encode(); changed["config"]["data"] = base64.b64encode(config_bytes).decode(); cases.append((changed, "wrong config payload digest"))
+    changed = copy.deepcopy(fixture); image = json.loads(base64.b64decode(changed["config"]["data"])); image["rootfs"]["diff_ids"] = ["sha256:" + "0" * 64]; changed["config"]["data"] = base64.b64encode(json.dumps(image, separators=(",", ":")).encode()).decode(); cases.append((changed, "wrong rootfs diff ID"))
     changed = copy.deepcopy(fixture); changed["layers"] = []; cases.append((changed, "zero layers"))
     changed = copy.deepcopy(fixture); changed["layers"].append(copy.deepcopy(changed["layers"][0])); cases.append((changed, "multiple layers"))
     changed = copy.deepcopy(fixture); changed["layers"][0]["digest"] = "sha256:" + "0" * 64; cases.append((changed, "wrong layer digest"))
@@ -73,15 +79,15 @@ def main():
         rejects(mutated, label)
 
     runtime = RUNTIME.read_text(encoding="utf-8")
-    for marker in ("verifyPinnedManifestDocument(bytes.toByteArray())", "verifyManifestContents(manifest)", "Debian image platform mismatch", "layer count mismatch", "layer[0] mismatch", 'String expectedLayerDigest = "sha256:" + ROOTFS_LAYER_SHA256;', "ROOTFS_CONFIG_SHA256", "ROOTFS_DIFF_ID"):
+    for marker in ("verifyPinnedManifestDocument(bytes.toByteArray())", "verifyManifestContents(manifest)", "Debian OCI manifest mediaType mismatch", "Debian OCI config descriptor mismatch", "Debian OCI config payload digest/size mismatch", "Debian image platform mismatch", "Debian image rootfs diff_ids mismatch", "layer count mismatch", "layer[0] mismatch", 'String expectedLayerDigest = "sha256:" + ROOTFS_LAYER_SHA256;', "String.valueOf(layerSizeValue)", "ROOTFS_CONFIG_SHA256", "ROOTFS_DIFF_ID"): 
         if marker not in runtime:
             raise SystemExit("Android manifest verifier lacks tested check/diagnostic: " + marker)
     activity = ACTIVITY.read_text(encoding="utf-8")
     ready = activity.index("linuxRuntime.awaitXfceSession(process, logFile)")
-    launch = activity.index("openReadyDesktopDisplay();", ready)
-    failure = activity.index("You are still on the MiniAriño home screen", ready)
-    if not ready < launch or failure < ready:
-        raise SystemExit("MiniAriño must open its embedded display only after readiness and stay home on failure")
+    launch = activity.index("showEmbeddedDesktop();", ready)
+    failure = activity.index("lastDesktopFailure = failure;", ready)
+    if not ready < launch < failure:
+        raise SystemExit("MiniAriño must open its embedded display only after readiness and keep failure on the home screen")
     if "startActivity(display)" not in activity or '"com.termux.x11.MainActivity"' not in activity:
         raise SystemExit("The display activity should remain packaged and launched internally by MiniAriño")
     x11_patch = X11_PATCH.read_text(encoding="utf-8")
