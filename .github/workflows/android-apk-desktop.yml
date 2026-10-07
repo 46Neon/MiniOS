@@ -50,6 +50,11 @@ jobs:
       - name: Install build tools and Android 8, 10, 11 and 15 emulator images
         run: sdkmanager --install 'platforms;android-34' 'build-tools;34.0.0' 'platforms;android-35' 'build-tools;35.0.0' 'emulator' 'system-images;android-26;google_apis;x86_64' 'system-images;android-29;google_apis;x86_64' 'system-images;android-30;google_apis;x86_64' 'system-images;android-35;google_apis;x86_64' 'ndk;29.0.14206865' 'cmake;3.22.1'
 
+      - name: Install native Wayland cross-build host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes meson ninja-build pkg-config libexpat1-dev file
+
       - name: Verify XFCE packages in Debian Bookworm ARM64 and session startup contract
         run: python3 android/scripts/test_debian_xfce_contract.py
 
@@ -57,6 +62,9 @@ jobs:
       # not patch an installed Termux/X11 app or add a runtime app dependency.
       - name: Prepare pinned Lorie source for embedded APK build
         run: python3 android/scripts/prepare_x11.py
+
+      - name: Build, package, and validate pinned Android Wayland host dependencies
+        run: bash scripts/build_wayland_android_poc.sh
 
       - name: Verify and stage pinned ARM64 PRoot runtime
         run: python3 android/scripts/fetch_proot_runtime.py android/app/src/main/assets/proot

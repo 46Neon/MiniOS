@@ -75,6 +75,13 @@ public final class HomeActivity extends Activity {
         root.addView(subtitle);
 
         root.addView(button("Install XFCE desktop + start session", v -> installAndLaunchXfceDesktop()));
+        if (BuildConfig.DEBUG && Arrays.asList(android.os.Build.SUPPORTED_ABIS).contains("arm64-v8a")) {
+            root.addView(button("Wayland host proof (debug only)", v -> {
+                Intent proof = new Intent();
+                proof.setClassName(getPackageName(), "org.miniarino.desktop.WaylandProofActivity");
+                startActivity(proof);
+            }));
+        }
         LinearLayout diagnosticsActions = new LinearLayout(this);
         diagnosticsActions.setOrientation(LinearLayout.HORIZONTAL);
         diagnosticsActions.addView(button("Copy diagnostics", v -> copyDiagnostics()), new LinearLayout.LayoutParams(0, -2, 1));

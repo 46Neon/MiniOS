@@ -6,13 +6,17 @@ on:
     branches: [android-apk-desktop]
     paths:
       - 'scripts/build_wayland_android_poc.sh'
+      - 'android/**'
       - 'docs/WAYLAND_ANDROID_POC_DEPENDENCY_AUDIT.md'
+      - 'docs/WAYLAND_ANDROID_HOST_SURFACE_PROOF.md'
       - '.github/workflows/wayland-android-dependencies.yml'
   pull_request:
     branches: [android-apk-desktop]
     paths:
       - 'scripts/build_wayland_android_poc.sh'
+      - 'android/**'
       - 'docs/WAYLAND_ANDROID_POC_DEPENDENCY_AUDIT.md'
+      - 'docs/WAYLAND_ANDROID_HOST_SURFACE_PROOF.md'
       - '.github/workflows/wayland-android-dependencies.yml'
 
 permissions:
@@ -20,15 +24,21 @@ permissions:
 
 jobs:
   compile-wayland-android-arm64-api26:
-    name: Compile pinned Wayland/libffi for Android ARM64 API 26
+    name: Build Wayland host proof APK for Android ARM64 API 26
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
-      - name: Check out feature branch
+      - name: Check out feature branch and pinned Lorie source
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-          submodules: false
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -37,7 +47,7 @@ jobs:
 
       - name: Install pinned Android NDK
         run: |
-          sdkmanager --install 'ndk;29.0.14206865'
+          sdkmanager --install 'platforms;android-34' 'build-tools;34.0.0' 'ndk;29.0.14206865'
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
 
       - name: Install host build tools
@@ -45,8 +55,48 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes meson ninja-build pkg-config libexpat1-dev file
 
-      - name: Compile and validate pinned upstream dependencies
+      - name: Prepare pinned Lorie source for app packaging
+        run: python3 android/scripts/prepare_x11.py
+
+      - name: Compile, stage, and validate pinned Wayland dependencies and JNI host/client
         run: bash scripts/build_wayland_android_poc.sh
+
+      - name: Stage the ARM64 PRoot runtime payload for APK packaging
+        run: python3 android/scripts/fetch_proot_runtime.py android/app/src/main/assets/proot
+
+      - name: Assemble ARM64 debug APK after native and ELF checks pass
+        run: android/vendor/termux-x11/gradlew -p android --no-daemon -PminiarinoAbiFilter=arm64-v8a :app:assembleDebug
+
+      - name: Verify the packaged API and native runtime closure
+        run: |
+          apk='android/app/build/outputs/apk/debug/app-debug.apk'
+          aapt="$ANDROID_HOME/build-tools/34.0.0/aapt"
+          test -s "$apk"
+          "$aapt" dump badging "$apk" | grep -F "package: name='org.miniarino.desktop.sdk28test'"
+          "$aapt" dump badging "$apk" | grep -F "sdkVersion:'26'"
+          "$aapt" dump badging "$apk" | grep -F "targetSdkVersion:'28'"
+          entries="$(unzip -Z1 "$apk")"
+          for name in libwayland_android_host.so libwayland-server.so.0 libwayland-client.so.0 libffi.so.8 libc++_shared.so; do
+            printf '%s\n' "$entries" | grep -Fx "lib/arm64-v8a/$name"
+          done
+          for notice in libwayland-COPYING-MIT-Expat.txt libffi-LICENSE.txt llvm-libcxx-LICENSE.TXT; do
+            printf '%s\n' "$entries" | grep -Fx "assets/third-party-notices/wayland-poc/$notice"
+          done
+          printf '%s\n' "$entries" | awk '/^lib\/[^/]+\/[^/]+\.so$/ { if ($0 !~ /^lib\/arm64-v8a\//) unexpected=1 } END { exit unexpected }'
+          for library in libwayland_android_host.so libwayland-server.so.0 libwayland-client.so.0 libffi.so.8; do
+            unzip -p "$apk" "lib/arm64-v8a/$library" > "/tmp/$library"
+            file "/tmp/$library" | grep -F 'ARM aarch64'
+          done
+
+      - name: Upload ARM64 APK and compile/package provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayland-android-arm64-api26-apk-${{ github.sha }}
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            artifacts/wayland-android-arm64-api26/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload compile-only libraries, provenance, and notices
         uses: actions/upload-artifact@v4

@@ -9,3 +9,11 @@
 *.tmp
 *.new
 *.sha256
+
+# Wayland Android PoC dependencies are rebuilt and checked by CI, not committed.
+/android/app/src/main/jniLibs/arm64-v8a/libwayland_android_host.so
+/android/app/src/main/jniLibs/arm64-v8a/libwayland-server.so*
+/android/app/src/main/jniLibs/arm64-v8a/libwayland-client.so*
+/android/app/src/main/jniLibs/arm64-v8a/libffi.so*
+/android/app/src/main/jniLibs/arm64-v8a/libc++_shared.so
+/android/app/src/main/assets/third-party-notices/wayland-poc/

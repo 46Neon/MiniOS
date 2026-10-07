@@ -141,6 +141,42 @@ cp "$TARGET_PREFIX"/lib/libwayland-server.so* "$ARTIFACT/lib/"
 cp "$TARGET_PREFIX"/lib/libwayland-client.so* "$ARTIFACT/lib/"
 cp "$TARGET_PREFIX"/lib/libffi.so* "$ARTIFACT/lib/"
 
+# Build the Android-owned host and the small, real libwayland-client test peer.
+# They live in one JNI library but use separate translation units/libraries and
+# a Unix socket; this is intentionally a host protocol/surface proof, not PRoot.
+readonly APP_JNILIBS="${GITHUB_WORKSPACE:-$PWD}/android/app/src/main/jniLibs/arm64-v8a"
+readonly APP_NOTICES="${GITHUB_WORKSPACE:-$PWD}/android/app/src/main/assets/third-party-notices/wayland-poc"
+mkdir -p "$APP_JNILIBS" "$APP_NOTICES"
+rm -f "$APP_JNILIBS/libwayland_android_host.so" "$APP_JNILIBS/libwayland-server.so"* \
+  "$APP_JNILIBS/libwayland-client.so"* "$APP_JNILIBS/libffi.so"* "$APP_JNILIBS/libc++_shared.so"
+cp "$WAYLAND_SRC/COPYING" "$APP_NOTICES/libwayland-COPYING-MIT-Expat.txt"
+cp "$LIBFFI_SRC/LICENSE" "$APP_NOTICES/libffi-LICENSE.txt"
+LIBCXX_LICENSE="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1/LICENSE.TXT"
+LIBCXX_SHARED="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
+[[ -s "$LIBCXX_LICENSE" && -s "$LIBCXX_SHARED" ]] || { echo 'Pinned NDK libc++ runtime/license missing' >&2; exit 1; }
+cp "$LIBCXX_LICENSE" "$APP_NOTICES/llvm-libcxx-LICENSE.TXT"
+cp "$LIBCXX_SHARED" "$APP_JNILIBS/libc++_shared.so"
+"$CXX" -std=c++17 -stdlib=libc++ -O2 -fPIC -shared -fvisibility=hidden -Wall -Wextra \
+  -I"$TARGET_PREFIX/include" \
+  "${GITHUB_WORKSPACE:-$PWD}/android/app/src/main/cpp/wayland_android_host.cpp" \
+  "${GITHUB_WORKSPACE:-$PWD}/android/app/src/main/cpp/wayland_test_client.cpp" \
+  -L"$TARGET_PREFIX/lib" -Wl,-rpath-link,"$TARGET_PREFIX/lib" \
+  -Wl,--no-undefined -Wl,-soname,libwayland_android_host.so \
+  -lwayland-server -lwayland-client -landroid -llog -lc++_shared \
+  -o "$APP_JNILIBS/libwayland_android_host.so"
+
+# Stage each dependency under the ELF SONAME that Android's dynamic linker
+# will request, not only under the unversioned linker name used at build time.
+for library in libwayland-server libwayland-client libffi; do
+  source="$TARGET_PREFIX/lib/${library}.so"
+  soname="$("$READELF" --dynamic-table "$source" | sed -n 's/.*(SONAME).*\[\(.*\)\].*/\1/p' | head -n 1)"
+  [[ -n "$soname" ]] || { echo "Missing SONAME for $source" >&2; exit 1; }
+  cp -L "$source" "$APP_JNILIBS/$soname"
+done
+cp "$APP_JNILIBS/libwayland_android_host.so" "$ARTIFACT/lib/"
+cp "$APP_JNILIBS/libc++_shared.so" "$ARTIFACT/lib/"
+cp "$APP_NOTICES"/* "$ARTIFACT/notices/"
+
 # Every copied shared object must be an Android ARM64 ELF with an Android
 # ident note whose first little-endian uint32 descriptor is exactly API 26.
 # llvm-readelf renders that descriptor as bytes (for API 26: 1a 00 00 00),
@@ -182,9 +218,19 @@ LIBFFI="$ARTIFACT/lib/libffi.so"
 validate_android_shared_library libwayland-server.so
 validate_android_shared_library libwayland-client.so
 validate_android_shared_library libffi.so
+validate_android_shared_library libwayland_android_host.so
 "$READELF" --dynamic-table "$SERVER" | tee "$WORK/server-dynamic.txt"
 grep -Eq 'Shared library: \[libffi\.so(\.8)?\]' "$WORK/server-dynamic.txt"
 grep -Fq 'Shared library: [libc.so]' "$WORK/server-dynamic.txt"
+"$READELF" --dynamic-table "$ARTIFACT/lib/libwayland_android_host.so" | tee "$WORK/jni-dynamic.txt"
+for needed in libwayland-server.so.0 libwayland-client.so.0 libc++_shared.so; do
+  grep -Fq "Shared library: [$needed]" "$WORK/jni-dynamic.txt" || {
+    echo "JNI library does not need expected runtime SONAME $needed" >&2; exit 1;
+  }
+  [[ -s "$APP_JNILIBS/$needed" ]] || { echo "Missing APK runtime dependency: $needed" >&2; exit 1; }
+done
+[[ -s "$APP_JNILIBS/libffi.so.8" ]] || { echo 'Missing transitive Wayland libffi SONAME in APK runtime dependencies' >&2; exit 1; }
+"$READELF" --file-header "$APP_JNILIBS/libc++_shared.so" | grep -Eq 'Machine:[[:space:]]+AArch64'
 
 {
   echo
@@ -196,7 +242,7 @@ grep -Fq 'Shared library: [libc.so]' "$WORK/server-dynamic.txt"
   echo "libffi source archive SHA-256: $LIBFFI_SHA256"
   echo "NDK: $NDK_VERSION"
   echo "Android minimum API target: $ANDROID_API"
-  echo 'Validation: libwayland server/client and libffi are ELF64 little-endian AArch64; their Android ident descriptors encode API 26; server links libffi.so and libc.so.'
+  echo 'Validation: libwayland server/client, libffi, and JNI host are ELF64 little-endian AArch64 with Android ident API 26; JNI host resolves its staged Wayland/libffi/libc++ SONAME dependencies. This compile/package gate is not runtime-render evidence.'
 } | tee -a "$ARTIFACT/build-metadata.txt"
 find "$ARTIFACT" -type f -print0 | sort -z | xargs -0 sha256sum > "$ARTIFACT/SHA256SUMS"
 cat "$ARTIFACT/SHA256SUMS"
