@@ -233,7 +233,7 @@ for needed in libwayland-server.so libwayland-client.so libc++_shared.so; do
   }
   [[ -s "$APP_JNILIBS/$needed" ]] || { echo "Missing APK runtime dependency: $needed" >&2; exit 1; }
 done
-[[ -s "$APP_JNILIBS/libffi.so.8" ]] || { echo 'Missing transitive Wayland libffi SONAME in APK runtime dependencies' >&2; exit 1; }
+[[ -s "$APP_JNILIBS/libffi.so" ]] || { echo 'Missing transitive Wayland libffi SONAME in APK runtime dependencies' >&2; exit 1; }
 "$READELF" --file-header "$APP_JNILIBS/libc++_shared.so" | grep -Eq 'Machine:[[:space:]]+AArch64'
 
 {
