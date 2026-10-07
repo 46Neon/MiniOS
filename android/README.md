@@ -1,8 +1,10 @@
 # MiniAriño Android integration spike
 
-This is a build-only integration experiment, not a usable desktop APK yet. It pins the upstream Termux:X11 source as a recursive Git submodule and packages its `:lorie` library into one Android package with application ID `org.miniarino.desktop`.
+This is an early Android integration milestone, **not a usable Linux desktop APK yet**. It pins the upstream Termux:X11 source as a recursive Git submodule and packages its `:lorie` library into one Android package with application ID `org.miniarino.desktop`.
 
-The current spike does **not** include a Linux root filesystem, PRoot, XFCE, terminal session, Godot, Chromium, Blender, or MiniAriño folder-management UI. Do not use this build as the requested desktop app. Its purpose is to prove that the upstream X11 Android component can be built into a single APK without installing the Termux:X11 APK separately.
+The host app now exposes a MiniAriño home screen, attempts to start the embedded Lorie X server in an app-owned `app_process`, opens the embedded display activity, and provides basic create / navigate / delete-empty-folder operations confined to its private workspace. Shared-folder selection uses Android's Storage Access Framework and persists the granted URI permission. These paths are code/build-validated only; physical Android testing is still required, especially to confirm process startup, display connection and SAF behavior.
+
+This APK still does **not** contain or provision a Linux root filesystem or PRoot, so it cannot run a Linux desktop, terminal, XFCE, Godot, Chromium or Blender. The X display alone is blank until an X client session can be started. Do not use this build as the requested finished desktop.
 
 ## Build
 

@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -16,7 +15,6 @@ import android.widget.Toast;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Comparator;
 
@@ -28,6 +26,7 @@ public final class HomeActivity extends Activity {
     private LinearLayout listing;
     private TextView pathLabel;
     private TextView status;
+    private static Process xServerProcess;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -66,8 +65,11 @@ public final class HomeActivity extends Activity {
         subtitle.setTextColor(0xff526174);
         root.addView(subtitle);
 
-        Button display = button("Open embedded X11 display", v -> openDisplay());
-        root.addView(display, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout displayActions = new LinearLayout(this);
+        displayActions.setOrientation(LinearLayout.HORIZONTAL);
+        displayActions.addView(button("Start / open X11", v -> openDisplay()), new LinearLayout.LayoutParams(0, -2, 1));
+        displayActions.addView(button("Stop X server", v -> stopXServer()), new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(displayActions);
         status = new TextView(this);
         status.setText("X11 is embedded. A Linux root filesystem and desktop session are not installed yet.");
         status.setTextSize(13);
@@ -114,13 +116,17 @@ public final class HomeActivity extends Activity {
             File tmp = new File(getFilesDir(), "tmp");
             if (!tmp.exists() && !tmp.mkdirs()) throw new IOException("Unable to prepare X11 temporary directory");
             String apk = getApplicationInfo().sourceDir;
-            ProcessBuilder pb = new ProcessBuilder("/system/bin/app_process", "/", "--nice-name=miniarino-x11",
-                    "com.termux.x11.CmdEntryPoint", ":0");
-            pb.environment().put("CLASSPATH", apk);
-            pb.environment().put("TMPDIR", tmp.getAbsolutePath());
-            pb.redirectErrorStream(true);
-            Process p = pb.start();
-            getPreferences(MODE_PRIVATE).edit().putLong("x11_started_at", System.currentTimeMillis()).apply();
+            synchronized (HomeActivity.class) {
+                if (xServerProcess == null || !isAlive(xServerProcess)) {
+                    ProcessBuilder pb = new ProcessBuilder("/system/bin/app_process", "/", "--nice-name=miniarino-x11",
+                            "com.termux.x11.CmdEntryPoint", ":0");
+                    pb.environment().put("CLASSPATH", apk);
+                    pb.environment().put("LD_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir);
+                    pb.environment().put("TMPDIR", tmp.getAbsolutePath());
+                    pb.redirectErrorStream(true);
+                    xServerProcess = pb.start();
+                }
+            }
             Intent display = new Intent();
             display.setClassName(getPackageName(), "com.termux.x11.MainActivity");
             display.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -130,6 +136,24 @@ public final class HomeActivity extends Activity {
             status.setText("Could not start the embedded X server: " + e.getMessage());
             Toast.makeText(this, "X11 startup failed; see status above", Toast.LENGTH_LONG).show();
         }
+    }
+
+    private static boolean isAlive(Process process) {
+        try { process.exitValue(); return false; }
+        catch (IllegalThreadStateException running) { return true; }
+    }
+
+    private void stopXServer() {
+        synchronized (HomeActivity.class) {
+            if (xServerProcess == null || !isAlive(xServerProcess)) {
+                xServerProcess = null;
+                status.setText("No MiniAriño X server process is currently tracked.");
+                return;
+            }
+            xServerProcess.destroy();
+            xServerProcess = null;
+        }
+        status.setText("Sent a stop signal to the X server process started by MiniAriño.");
     }
 
     private boolean isWorkspacePath(File file) {
@@ -151,7 +175,7 @@ public final class HomeActivity extends Activity {
             });
             listing.addView(up);
         }
-        File[] children = current.listFiles(File::isDirectory);
+        File[] children = current.listFiles(f -> f.isDirectory() && isWorkspacePath(f));
         if (children == null) children = new File[0];
         Arrays.sort(children, Comparator.comparing(File::getName, String.CASE_INSENSITIVE_ORDER));
         if (children.length == 0) {
