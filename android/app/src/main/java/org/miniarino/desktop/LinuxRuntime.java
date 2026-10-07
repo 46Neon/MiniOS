@@ -105,7 +105,9 @@ final class LinuxRuntime {
         installBundledRuntime();
         if (new File(rootfs, ROOT_MARKER).isFile()) return;
         File archive = new File(base, "debian-arm64-rootfs.tar.gz");
+        progress.update("Requesting Debian registry access…");
         String token = fetchDockerPullToken();
+        progress.update("Verifying pinned Debian ARM64 OCI manifest…");
         verifyPinnedManifest(token);
         progress.update("Downloading verified Debian ARM64 root filesystem (~27 MiB)…");
         downloadAndVerify(archive, token);
@@ -168,7 +170,7 @@ final class LinuxRuntime {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             String actual = "sha256:" + hex(digest.digest(document));
             if (!OCI_MANIFEST_DIGEST.equals(actual)) {
-                throw new IOException("Debian OCI manifest SHA-256 verification failed: actual " + actual);
+                throw new IOException("Debian OCI manifest SHA-256 mismatch: actual " + actual + "; expected " + OCI_MANIFEST_DIGEST);
             }
             JSONObject manifest = new JSONObject(new String(document, StandardCharsets.UTF_8));
             verifyManifestContents(manifest);
@@ -182,15 +184,19 @@ final class LinuxRuntime {
     /** Verifies the OCI descriptor and the decoded image config against the pinned ARM64 rootfs. */
     static void verifyManifestContents(JSONObject manifest) throws IOException {
         String mediaType = manifest.optString("mediaType", "<missing>");
-        if (!"application/vnd.oci.image.manifest.v1+json".equals(mediaType)) {
-            throw new IOException("Debian OCI manifest mediaType mismatch: actual " + mediaType);
+        String expectedManifestMediaType = "application/vnd.oci.image.manifest.v1+json";
+        if (!expectedManifestMediaType.equals(mediaType)) {
+            throw new IOException("Debian OCI manifest mediaType mismatch: actual " + mediaType
+                    + "; expected " + expectedManifestMediaType);
         }
 
         JSONObject config = manifest.optJSONObject("config");
         if (config == null) throw new IOException("Debian OCI config descriptor is missing or is not an object");
         String configMediaType = config.optString("mediaType", "<missing>");
-        if (!"application/vnd.oci.image.config.v1+json".equals(configMediaType)) {
-            throw new IOException("Debian OCI config mediaType mismatch: actual " + configMediaType);
+        String expectedConfigMediaType = "application/vnd.oci.image.config.v1+json";
+        if (!expectedConfigMediaType.equals(configMediaType)) {
+            throw new IOException("Debian OCI config mediaType mismatch: actual " + configMediaType
+                    + "; expected " + expectedConfigMediaType);
         }
         String configDigest = config.optString("digest", "<missing>");
         Object configSizeValue = config.opt("size");
@@ -232,12 +238,14 @@ final class LinuxRuntime {
                     + ", variant=" + variant + "; expected linux/arm64/v8");
         }
         JSONObject rootfs = image.optJSONObject("rootfs");
-        if (rootfs == null || !"layers".equals(rootfs.optString("type", "<missing>"))) {
-            throw new IOException("Debian image rootfs type mismatch: expected layers");
+        String rootfsType = rootfs == null ? "<missing>" : rootfs.optString("type", "<missing>");
+        if (!"layers".equals(rootfsType)) {
+            throw new IOException("Debian image rootfs type mismatch: actual " + rootfsType + "; expected layers");
         }
         org.json.JSONArray diffIds = rootfs.optJSONArray("diff_ids");
         if (diffIds == null || diffIds.length() != 1 || !ROOTFS_DIFF_ID.equals(diffIds.optString(0))) {
-            throw new IOException("Debian image rootfs diff_ids mismatch: expected [" + ROOTFS_DIFF_ID + "]");
+            throw new IOException("Debian image rootfs diff_ids mismatch: actual "
+                    + (diffIds == null ? "<missing>" : diffIds.toString()) + "; expected [" + ROOTFS_DIFF_ID + "]");
         }
 
         org.json.JSONArray layers = manifest.optJSONArray("layers");
@@ -274,14 +282,20 @@ final class LinuxRuntime {
             int code = connection.getResponseCode();
             if (code != HttpURLConnection.HTTP_OK) throw new IOException("Debian layer download returned HTTP " + code);
             long advertised = connection.getContentLengthLong();
-            if (advertised >= 0 && advertised != ROOTFS_LAYER_BYTES) throw new IOException("Unexpected Debian layer size");
+            if (advertised >= 0 && advertised != ROOTFS_LAYER_BYTES) {
+                throw new IOException("Debian layer Content-Length mismatch: actual " + advertised
+                        + " bytes; expected " + ROOTFS_LAYER_BYTES + " bytes");
+            }
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             try (InputStream in = new BufferedInputStream(connection.getInputStream()); FileOutputStream out = new FileOutputStream(part)) {
                 copyBounded(in, out, digest, ROOTFS_LAYER_BYTES);
             }
             String actual = hex(digest.digest());
             if (!ROOTFS_LAYER_SHA256.equals(actual) || part.length() != ROOTFS_LAYER_BYTES) {
-                part.delete(); throw new IOException("Debian rootfs SHA-256 verification failed");
+                long actualBytes = part.length();
+                part.delete();
+                throw new IOException("Debian rootfs layer mismatch: actual sha256:" + actual + ", size "
+                        + actualBytes + " bytes; expected sha256:" + ROOTFS_LAYER_SHA256 + ", size " + ROOTFS_LAYER_BYTES + " bytes");
             }
             if (target.exists() && !target.delete()) throw new IOException("Cannot replace old Debian layer");
             if (!part.renameTo(target)) throw new IOException("Cannot finalize Debian layer download");

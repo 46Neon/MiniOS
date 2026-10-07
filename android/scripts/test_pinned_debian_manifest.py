@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "scripts/debian-arm64-manifest.fixture.json"
 RUNTIME = ROOT / "app/src/main/java/org/miniarino/desktop/LinuxRuntime.java"
 ACTIVITY = ROOT / "app/src/main/java/org/miniarino/desktop/HomeActivity.java"
+WORKFLOW = ROOT.parent / ".github/workflows/android-apk-desktop.yml"
 X11_PATCH = ROOT / "scripts/prepare_x11.py"
 MANIFEST_SHA = "sha256:a1b86db52ce3daef089e45aabe36dfec4091f82464c25c1fdcf03de197cbe82a"
 CONFIG_SHA = "sha256:2a64693fa3d2d9c0fd20e6e74c9001aa672a1c081fce5178d104ef160231c409"
@@ -79,7 +80,7 @@ def main():
         rejects(mutated, label)
 
     runtime = RUNTIME.read_text(encoding="utf-8")
-    for marker in ("verifyPinnedManifestDocument(bytes.toByteArray())", "verifyManifestContents(manifest)", "Debian OCI manifest mediaType mismatch", "Debian OCI config descriptor mismatch", "Debian OCI config payload digest/size mismatch", "Debian image platform mismatch", "Debian image rootfs diff_ids mismatch", "layer count mismatch", "layer[0] mismatch", 'String expectedLayerDigest = "sha256:" + ROOTFS_LAYER_SHA256;', "String.valueOf(layerSizeValue)", "ROOTFS_CONFIG_SHA256", "ROOTFS_DIFF_ID"): 
+    for marker in ("verifyPinnedManifestDocument(bytes.toByteArray())", "verifyManifestContents(manifest)", "Debian OCI manifest mediaType mismatch", "expectedManifestMediaType", "Debian OCI config descriptor mismatch", "expectedConfigMediaType", "Debian OCI config payload digest/size mismatch", "Debian image platform mismatch", "Debian image rootfs type mismatch: actual", "Debian image rootfs diff_ids mismatch: actual", "layer count mismatch: actual", "layer[0] mismatch", 'String expectedLayerDigest = "sha256:" + ROOTFS_LAYER_SHA256;', "String.valueOf(layerSizeValue)", "ROOTFS_CONFIG_SHA256", "ROOTFS_DIFF_ID"): 
         if marker not in runtime:
             raise SystemExit("Android manifest verifier lacks tested check/diagnostic: " + marker)
     activity = ACTIVITY.read_text(encoding="utf-8")
@@ -90,6 +91,16 @@ def main():
         raise SystemExit("MiniAriño must open its embedded display only after readiness and keep failure on the home screen")
     if "startActivity(display)" not in activity or '"com.termux.x11.MainActivity"' not in activity:
         raise SystemExit("The display activity should remain packaged and launched internally by MiniAriño")
+    for marker in ("Copy diagnostics", "Share diagnostics", "BuildConfig.BUILD_COMMIT", "BuildConfig.VERSION_CODE", "Android API:", "ABI:", "Failed stage:", "currentDesktopStage", "debian-provision.log", "MiniAriño stopped during", "sanitizeDiagnostics"):
+        if marker not in activity:
+            raise SystemExit("In-app diagnostics lack required stage/build evidence: " + marker)
+    if "Authorization" in activity or "fetchDockerPullToken" in activity:
+        raise SystemExit("In-app diagnostics must not include registry credentials")
+    gradle = (ROOT / "app/build.gradle").read_text(encoding="utf-8")
+    if "buildConfig true" not in gradle or "BUILD_COMMIT" not in gradle or "targetSdkVersion 28" not in gradle:
+        raise SystemExit("The diagnostic build identity or Android target-SDK contract is missing")
+    if "python3 android/scripts/test_pinned_debian_manifest.py" not in WORKFLOW.read_text(encoding="utf-8"):
+        raise SystemExit("CI does not run the offline Debian manifest/diagnostics regression test")
     x11_patch = X11_PATCH.read_text(encoding="utf-8")
     if '<string name="lorie_app_name">MiniAriño Desktop</string>' not in x11_patch or '<string name="not_connected">MiniAriño Desktop</string>' not in x11_patch:
         raise SystemExit("Embedded display activity must use MiniAriño branding rather than the separate X11 app label")

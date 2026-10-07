@@ -5,6 +5,10 @@ android {
     compileSdk 34
     ndkVersion '29.0.14206865'
 
+    buildFeatures {
+        buildConfig true
+    }
+
     defaultConfig {
         applicationId 'org.miniarino.desktop'
         // Android 8.0 (API 26) is the supported minimum for the sideload prototype.
@@ -21,6 +25,7 @@ android {
         }
         versionCode 4
         versionName '0.3.1-oci-manifest-verify'
+        buildConfigField 'String', 'BUILD_COMMIT', "\"${System.getenv('GITHUB_SHA') ?: 'unknown'}\""
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 

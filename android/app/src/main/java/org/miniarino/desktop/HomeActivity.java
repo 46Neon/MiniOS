@@ -32,6 +32,8 @@ public final class HomeActivity extends Activity {
     private static Process linuxDesktopProcess;
     private static boolean desktopSetupInProgress;
     private volatile String lastDesktopFailure = "";
+    private volatile String currentDesktopStage = "Idle";
+    private volatile String lastFailureStage = "";
     private static final java.util.concurrent.ExecutorService SETUP_EXECUTOR = java.util.concurrent.Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private LinuxRuntime linuxRuntime;
@@ -189,27 +191,41 @@ public final class HomeActivity extends Activity {
             desktopSetupInProgress = true;
         }
         lastDesktopFailure = "";
-        status.setText("Preparing MiniAriño's private Debian system and installing XFCE. The embedded display will open only after XFCE is ready.");
+        lastFailureStage = "";
+        setDesktopStage("Preparing the private Debian ARM64 system");
+        status.setText("Preparing Debian and XFCE. If anything fails, the current step and reason will appear here.");
         SETUP_EXECUTOR.execute(() -> {
             Process process = null;
             File installLog = new File(getFilesDir(), "xfce-install.log");
             File logFile = new File(getFilesDir(), "xfce-desktop.log");
             try {
-                linuxRuntime.provision(message -> mainHandler.post(() -> { if (status != null) status.setText(message); }));
+                setDesktopStage("Preparing pinned Debian ARM64 root filesystem");
+                linuxRuntime.provision(message -> {
+                    setDesktopStage(message);
+                    mainHandler.post(() -> { if (status != null) status.setText(message); });
+                });
+                setDesktopStage("Installing XFCE packages and keyboard support");
                 mainHandler.post(() -> { if (status != null) status.setText("Installing XFCE and keyboard support in MiniAriño. This may take several minutes…"); });
                 linuxRuntime.installDesktopPackages(installLog);
+                setDesktopStage("Starting MiniAriño embedded display server");
                 startEmbeddedXServer();
                 mainHandler.post(() -> { if (status != null) status.setText("Starting MiniAriño's embedded display server and verifying its keyboard configuration…"); });
+                setDesktopStage("Checking embedded display and keyboard configuration");
                 awaitEmbeddedXServer();
+                setDesktopStage("Starting the XFCE desktop session");
                 process = linuxRuntime.startXfceDesktop(logFile);
                 synchronized (HomeActivity.class) { linuxDesktopProcess = process; }
                 mainHandler.post(() -> { if (status != null) status.setText("Starting XFCE on the embedded display. MiniAriño will open it after the session manager, terminal and file manager are ready…"); });
+                setDesktopStage("Waiting for XFCE readiness");
                 linuxRuntime.awaitXfceSession(process, logFile);
+                setDesktopStage("Opening the ready desktop");
                 showEmbeddedDesktop();
+                setDesktopStage("XFCE desktop is ready");
                 Process running = process;
                 mainHandler.post(() -> { if (status != null && isAlive(running)) status.setText("MiniAriño XFCE is ready on its embedded display. The session includes a terminal and file manager."); });
                 int exit = process.waitFor();
                 synchronized (HomeActivity.class) { if (linuxDesktopProcess == process) linuxDesktopProcess = null; }
+                setDesktopStage("XFCE session ended (exit code " + exit + ")");
                 mainHandler.post(() -> { if (status != null) status.setText("MiniAriño desktop session ended (exit code " + exit + "). Tap the desktop button to start it again."); });
             } catch (Exception e) {
                 if (process != null && isAlive(process)) process.destroy();
@@ -219,10 +235,12 @@ public final class HomeActivity extends Activity {
                     xServerProcess = null;
                 }
                 final String failure = conciseFailure(e);
+                lastFailureStage = currentDesktopStage;
                 lastDesktopFailure = failure;
+                appendProvisionDiagnostic("FAILURE at " + lastFailureStage + ": " + throwableDetails(e));
                 mainHandler.post(() -> {
-                    if (status != null) status.setText("MiniAriño desktop did not start: " + failure + ". Copy or share diagnostics for help.");
-                    Toast.makeText(HomeActivity.this, "MiniAriño could not start the desktop", Toast.LENGTH_LONG).show();
+                    if (status != null) status.setText("MiniAriño stopped during " + lastFailureStage + ": " + failure + ". Copy diagnostics for details.");
+                    Toast.makeText(HomeActivity.this, "MiniAriño could not start; copy diagnostics for the reason", Toast.LENGTH_LONG).show();
                 });
             } finally {
                 synchronized (HomeActivity.class) { desktopSetupInProgress = false; }
@@ -233,6 +251,36 @@ public final class HomeActivity extends Activity {
     private static boolean isAlive(Process process) {
         try { process.exitValue(); return false; }
         catch (IllegalThreadStateException running) { return true; }
+    }
+
+    private void setDesktopStage(String stage) {
+        currentDesktopStage = stage;
+        appendProvisionDiagnostic("STAGE: " + stage);
+    }
+
+    private void appendProvisionDiagnostic(String message) {
+        File log = new File(getFilesDir(), "debian-provision.log");
+        String line = System.currentTimeMillis() + " " + sanitizeDiagnostics(message) + "\n";
+        try (java.io.FileOutputStream output = new java.io.FileOutputStream(log, true)) {
+            output.write(line.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (IOException ignored) { }
+    }
+
+    private static String throwableDetails(Throwable error) {
+        StringBuilder details = new StringBuilder();
+        Throwable current = error;
+        for (int depth = 0; current != null && depth < 8; depth++, current = current.getCause()) {
+            if (depth > 0) details.append(" <- ");
+            details.append(current.getClass().getSimpleName());
+            if (current.getMessage() != null && !current.getMessage().trim().isEmpty()) details.append(": ").append(current.getMessage());
+        }
+        return sanitizeDiagnostics(details.toString());
+    }
+
+    private static String sanitizeDiagnostics(String value) {
+        if (value == null) return "";
+        return value.replaceAll("(?i)Bearer\\s+[^\\s,;]+", "Bearer [REDACTED]")
+                .replaceAll("(?i)(authorization|token)\\s*[:=]\\s*[^\\s,;]+", "$1=[REDACTED]");
     }
 
     private void stopXServer() {
@@ -267,16 +315,20 @@ public final class HomeActivity extends Activity {
         StringBuilder text = new StringBuilder("MiniAriño desktop diagnostics\n");
         String version = "unknown";
         try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { }
-        text.append("App version: ").append(version).append('\n');
+        text.append("App version: ").append(version).append(" (code ").append(BuildConfig.VERSION_CODE).append(")\n");
+        text.append("Build commit: ").append(BuildConfig.BUILD_COMMIT).append('\n');
         text.append("Android API: ").append(android.os.Build.VERSION.SDK_INT).append("; target SDK: ")
                 .append(getApplicationInfo().targetSdkVersion).append('\n');
         text.append("ABI: ").append(android.os.Build.SUPPORTED_ABIS.length == 0 ? "unknown" : android.os.Build.SUPPORTED_ABIS[0]).append('\n');
+        text.append("Current stage: ").append(currentDesktopStage).append('\n');
         text.append("Current status: ").append(status == null ? "not available" : status.getText()).append('\n');
-        if (!lastDesktopFailure.isEmpty()) text.append("Last failure: ").append(lastDesktopFailure).append('\n');
+        if (!lastFailureStage.isEmpty()) text.append("Failed stage: ").append(lastFailureStage).append('\n');
+        if (!lastDesktopFailure.isEmpty()) text.append("Failure: ").append(lastDesktopFailure).append('\n');
+        appendLogTail(text, "debian-provision.log");
         appendLogTail(text, "xfce-install.log");
         appendLogTail(text, "xfce-desktop.log");
         appendLogTail(text, "x11-server.log");
-        return text.toString();
+        return sanitizeDiagnostics(text.toString());
     }
 
     private void appendLogTail(StringBuilder text, String name) {
@@ -288,7 +340,7 @@ public final class HomeActivity extends Activity {
             input.seek(start);
             byte[] bytes = new byte[(int) (input.length() - start)];
             input.readFully(bytes);
-            text.append(new String(bytes, java.nio.charset.StandardCharsets.UTF_8)).append('\n');
+            text.append(sanitizeDiagnostics(new String(bytes, java.nio.charset.StandardCharsets.UTF_8))).append('\n');
         } catch (IOException e) { text.append("(could not read diagnostic log)\n"); }
     }
 
