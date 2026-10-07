@@ -7,12 +7,18 @@ android {
 
     defaultConfig {
         applicationId 'org.miniarino.desktop'
-        minSdkVersion 24
+        // Android 8.0 (API 26) is the supported minimum for the sideload prototype.
+        minSdkVersion 26
         // Android blocks execve() from an app's writable private data directory when
         // targetSdkVersion >= 29. The standalone Linux runtime is intentionally stored
         // under getFilesDir(), so this app must retain the last supported legacy target.
         // This is a sideloaded prototype; it is not Play Store target-SDK compliant.
         targetSdkVersion 28
+        // CI runs the exact launcher/PRoot smoke path on x86_64 emulators, then packages
+        // only ARM64 native libraries for the side-load APK after those gates pass.
+        if (project.hasProperty('miniarinoAbiFilter')) {
+            ndk { abiFilters project.property('miniarinoAbiFilter').toString() }
+        }
         versionCode 3
         versionName '0.3.0-xfce-exec-fix'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'

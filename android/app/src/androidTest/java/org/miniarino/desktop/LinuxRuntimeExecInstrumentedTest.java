@@ -1,7 +1,10 @@
 package org.miniarino.desktop;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.os.Build;
+import android.view.ViewGroup;
 import android.system.Os;
 import android.util.Log;
 
@@ -20,15 +23,36 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-/** Exercises private-data execution and a real PRoot guest process on Android API 35. */
+/** Verifies the installed launcher and a real PRoot guest process on supported Android APIs. */
 @RunWith(AndroidJUnit4.class)
 public final class LinuxRuntimeExecInstrumentedTest {
     private static final String TAG = "MiniArinoExecTest";
     private static final String SUCCESS = "MINIARINO_PROOT_GUEST_OK";
     private static final String KNOWN_LINKER_WARNING =
             "WARNING: linker: Warning: failed to find generated linker configuration from \"/linkerconfig/ld.config.txt\"";
+
+    @Test(timeout = 30000L)
+    public void launcherOpensTheRealAppActivity() throws Exception {
+        Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        assertTrue("Supported Android compatibility tests start at API 26", Build.VERSION.SDK_INT >= 26);
+        Intent launch = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+        assertNotNull("The test package must expose its app launcher", launch);
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        Activity activity = InstrumentationRegistry.getInstrumentation().startActivitySync(launch);
+        try {
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            assertEquals("Launcher must open MiniAriño's actual home screen",
+                    HomeActivity.class.getName(), activity.getClass().getName());
+            assertTrue("Home screen must inflate visible application content",
+                    ((ViewGroup) activity.findViewById(android.R.id.content)).getChildCount() > 0);
+        } finally {
+            activity.finish();
+        }
+        Log.i(TAG, "PASS: launcher opened MiniAriño on Android API " + Build.VERSION.SDK_INT);
+    }
 
     @Test(timeout = 900000L)
     public void appPrivateProotExecutesGuestCommand() throws Exception {
@@ -38,7 +62,7 @@ public final class LinuxRuntimeExecInstrumentedTest {
                 "org.miniarino.desktop.sdk28test", context.getPackageName());
         assertEquals("Writable app-private exec requires the legacy target SDK", 28,
                 context.getApplicationInfo().targetSdkVersion);
-        assertTrue("Test must run on Android Q or later", Build.VERSION.SDK_INT >= 29);
+        assertTrue("Supported Android compatibility tests start at API 26", Build.VERSION.SDK_INT >= 26);
         assertEquals("The runtime test image must be x86_64", "x86_64", Build.SUPPORTED_ABIS[0]);
 
         File runtime = new File(context.getFilesDir(), "proot-emulator-test");
