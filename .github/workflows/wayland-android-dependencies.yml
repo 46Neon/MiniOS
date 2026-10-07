@@ -1,0 +1,57 @@
+name: Pinned Wayland Android dependency compile gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [android-apk-desktop]
+    paths:
+      - 'android/scripts/build_wayland_android_poc.sh'
+      - 'docs/WAYLAND_ANDROID_POC_DEPENDENCY_AUDIT.md'
+      - '.github/workflows/wayland-android-dependencies.yml'
+  pull_request:
+    branches: [android-apk-desktop]
+    paths:
+      - 'android/scripts/build_wayland_android_poc.sh'
+      - 'docs/WAYLAND_ANDROID_POC_DEPENDENCY_AUDIT.md'
+      - '.github/workflows/wayland-android-dependencies.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  compile-wayland-android-arm64-api26:
+    name: Compile pinned Wayland/libffi for Android ARM64 API 26
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          submodules: false
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install pinned Android NDK
+        run: |
+          sdkmanager --install 'ndk;29.0.14206865'
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+
+      - name: Install host build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes meson ninja-build pkg-config libexpat1-dev file
+
+      - name: Compile and validate pinned upstream dependencies
+        run: bash android/scripts/build_wayland_android_poc.sh
+
+      - name: Upload compile-only libraries, provenance, and notices
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayland-android-arm64-api26-${{ github.sha }}
+          path: artifacts/wayland-android-arm64-api26/
+          if-no-files-found: error
+          retention-days: 14
