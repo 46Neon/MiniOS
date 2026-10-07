@@ -38,6 +38,9 @@ jobs:
       - name: Apply pinned upstream DSL compatibility patch
         run: python3 android/scripts/prepare_x11.py
 
+      - name: Verify and stage pinned ARM64 PRoot runtime
+        run: python3 android/scripts/fetch_proot_runtime.py android/app/src/main/assets/proot
+
       - name: Build the single-package ARM64 debug APK
         run: android/vendor/termux-x11/gradlew -p android --no-daemon :app:assembleDebug
 
@@ -50,6 +53,11 @@ jobs:
           test -n "$native_libs"
           echo "Verified ARM64 native libraries:"
           printf '%s\n' "$native_libs"
+          unzip -Z1 "$apk" | grep -Fx 'assets/proot/bin/proot'
+          unzip -Z1 "$apk" | grep -Fx 'assets/proot/libexec/proot/loader'
+          unzip -Z1 "$apk" | grep -Fx 'assets/proot/lib/libtalloc.so.2'
+          unzip -Z1 "$apk" | grep -Fx 'assets/proot/lib/libandroid-shmem.so'
+          unzip -Z1 "$apk" | grep -Fx 'assets/proot-licenses/GPL-2.0-only.txt'
           apk_sha256="$(sha256sum "$apk" | cut -d ' ' -f 1)"
           echo "APK_SHA256=$apk_sha256" >> "$GITHUB_ENV"
           echo "APK_SHA256=$apk_sha256"

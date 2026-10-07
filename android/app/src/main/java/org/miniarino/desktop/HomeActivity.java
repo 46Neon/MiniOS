@@ -5,6 +5,8 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -27,9 +29,14 @@ public final class HomeActivity extends Activity {
     private TextView pathLabel;
     private TextView status;
     private static Process xServerProcess;
+    private static Process linuxClientProcess;
+    private static final java.util.concurrent.ExecutorService SETUP_EXECUTOR = java.util.concurrent.Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private LinuxRuntime linuxRuntime;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        linuxRuntime = new LinuxRuntime(this);
         workspace = new File(getFilesDir(), "workspace");
         if (!workspace.exists() && !workspace.mkdirs()) {
             Toast.makeText(this, "Could not create private workspace", Toast.LENGTH_LONG).show();
@@ -70,8 +77,11 @@ public final class HomeActivity extends Activity {
         displayActions.addView(button("Start / open X11", v -> openDisplay()), new LinearLayout.LayoutParams(0, -2, 1));
         displayActions.addView(button("Stop X server", v -> stopXServer()), new LinearLayout.LayoutParams(0, -2, 1));
         root.addView(displayActions);
+        root.addView(button("Install Debian ARM64 + launch X11 test client", v -> installAndLaunchLinuxClient()));
         status = new TextView(this);
-        status.setText("X11 is embedded. A Linux root filesystem and desktop session are not installed yet.");
+        status.setText(linuxRuntime.isReady()
+                ? "Debian ARM64 root filesystem is installed in private app storage. No desktop environment is installed yet."
+                : "Lorie X11 is embedded. Debian ARM64 and a Linux X11 test client can be downloaded on first use; no desktop is installed yet.");
         status.setTextSize(13);
         status.setTextColor(0xff526174);
         status.setPadding(0, dp(4), 0, dp(8));
@@ -139,6 +149,33 @@ public final class HomeActivity extends Activity {
         }
     }
 
+    private void installAndLaunchLinuxClient() {
+        if (linuxClientProcess != null && isAlive(linuxClientProcess)) {
+            status.setText("A Debian setup or X11 test client is already running.");
+            return;
+        }
+        openDisplay();
+        status.setText("Starting first-run Debian ARM64 setup in private app storage…");
+        SETUP_EXECUTOR.execute(() -> {
+            try {
+                linuxRuntime.provision(message -> mainHandler.post(() -> { if (status != null) status.setText(message); }));
+                mainHandler.post(() -> { if (status != null) status.setText("Debian is provisioned. Installing the small x11-utils package, then launching xmessage on Lorie :0…"); });
+                Thread.sleep(2500L);
+                Process process = linuxRuntime.startXMessage(new File(getFilesDir(), "debian-x11-client.log"));
+                synchronized (HomeActivity.class) { linuxClientProcess = process; }
+                mainHandler.post(() -> { if (status != null) status.setText("Debian ARM64 is provisioned. PRoot is installing x11-utils and will launch the xmessage X11 test client; log: app-private debian-x11-client.log."); });
+                int exit = process.waitFor();
+                synchronized (HomeActivity.class) { if (linuxClientProcess == process) linuxClientProcess = null; }
+                if (exit != 0) mainHandler.post(() -> { if (status != null) status.setText("Linux X11 client exited with code " + exit + "; inspect debian-x11-client.log in app-private storage. The desktop is not installed."); });
+            } catch (Exception e) {
+                mainHandler.post(() -> {
+                    if (status != null) status.setText("Debian/X11 setup did not complete: " + e.getMessage() + ". No desktop is installed; see app-private logs.");
+                    Toast.makeText(HomeActivity.this, "Linux setup failed; see status and app-private log", Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
     private static boolean isAlive(Process process) {
         try { process.exitValue(); return false; }
         catch (IllegalThreadStateException running) { return true; }
@@ -146,6 +183,10 @@ public final class HomeActivity extends Activity {
 
     private void stopXServer() {
         synchronized (HomeActivity.class) {
+            if (linuxClientProcess != null && isAlive(linuxClientProcess)) {
+                linuxClientProcess.destroy();
+                linuxClientProcess = null;
+            }
             if (xServerProcess == null || !isAlive(xServerProcess)) {
                 xServerProcess = null;
                 status.setText("No MiniAriño X server process is currently tracked.");

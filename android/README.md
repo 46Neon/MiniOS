@@ -1,19 +1,17 @@
-# MiniAriño Android integration spike
+# MiniAriño single-APK Android spike
 
-This is an early Android integration milestone, **not a usable Linux desktop APK yet**. It pins the upstream Termux:X11 source as a recursive Git submodule and packages its `:lorie` library into one Android package with application ID `org.miniarino.desktop`.
+This branch builds one ARM64 Android APK containing the app-owned Lorie X11 display and the Android UI. It also stages a small, pinned ARM64 PRoot runtime inside the APK. On first use, the app can download and verify one official Debian `bookworm-slim` ARM64 OCI rootfs layer into its private internal storage. The rootfs is extracted without using shared storage. The UI can ask PRoot to run Debian's `apt-get` to install `x11-utils`, then attempt to launch the real `xmessage` X11 client on display `:0`.
 
-The host app now exposes a MiniAriño home screen, attempts to start the embedded Lorie X server in an app-owned `app_process`, opens the embedded display activity, and provides basic create / navigate / delete-empty-folder operations confined to its private workspace. Shared-folder selection uses Android's Storage Access Framework and persists the granted URI permission. These paths are code/build-validated only; physical Android testing is still required, especially to confirm process startup, display connection and SAF behavior.
+This is an integration spike, **not a ready desktop APK**. CI compiles and packages the APK and verifies the staged PRoot artifact; CI does not run Android, provision the rootfs on a phone, prove PRoot ptrace behavior under device SELinux, establish a working X socket, or verify the `xmessage` window. The APK does not yet contain XFCE, a terminal, a graphical file manager, Godot 4, Chromium, or Blender. The existing private folder UI and Android Storage Access Framework folder picker are separate from the Linux rootfs. Do not describe the spike as a desktop-ready build.
 
-This APK still does **not** contain or provision a Linux root filesystem or PRoot, so it cannot run a Linux desktop, terminal, XFCE, Godot, Chromium or Blender. The X display alone is blank until an X client session can be started. Do not use this build as the requested finished desktop.
+## Runtime design and pinned inputs
 
-## Build
+- ABI/userland: Android ARM64 (`arm64-v8a`) and Debian ARM64 on the Android host kernel; no QEMU, amd64 image, separate Termux app, or Termux:X11 app.
+- PRoot: Termux package `5.1.107.96`, package source/build metadata commit [`de39661946f7e8175b5dd0755121fa28cb0aebd1`](https://github.com/termux/termux-packages/commit/de39661946f7e8175b5dd0755121fa28cb0aebd1). The three fixed ARM64 `.deb` package URLs, SHA-256 checks, architecture checks, and asset staging are in `scripts/fetch_proot_runtime.py`. The exact hashes are checked during CI before APK packaging. The PRoot source is GPL-2.0; `libtalloc` is GPL-3.0; `libandroid-shmem` is BSD-3-Clause. License texts are bundled under `app/src/main/assets/proot-licenses/`.
+- Debian: official Docker Library image `debian:bookworm-slim`, ARM64 OCI manifest `sha256:a1b86db52ce3daef089e45aabe36dfec4091f82464c25c1fdcf03de197cbe82a`; the app fetches that manifest and verifies its SHA-256 and expected one-layer descriptor. The 28,137,179-byte compressed layer must match `sha256:c75f989a229d12b2d2613a5997de9ff3546f664c22da9248720033a2410220f6` before extraction. The manifest digest and layer digest are also written into the private installation marker.
+- Rootfs and PRoot files are stored below `getFilesDir()/linux`; the initial file UI remains limited to its own workspace, and user-selected shared directories remain SAF-only. The X display's private temporary directory is bound as Debian `/tmp` so a local X11 socket can be shared where Lorie exposes one.
+- First-run download requires working internet and enough internal storage. Debian `x11-utils` is fetched from the signed Debian repositories by `apt-get`; no bundled Linux desktop or GUI client has yet been verified on hardware.
 
-GitHub Actions builds an ARM64 debug APK and checks its Android package identity. The upstream Lorie source is GPL-3.0; the upstream source is pinned by the submodule commit and must remain available with its license when distributing binaries.
+## Current verification boundary
 
-## Follow-up milestones
-
-1. Start and render an X11 session from the host app, then verify it on an ARM64 device.
-2. Add an app-private ARM64 Linux userland and PRoot-based first-run provisioning without QEMU.
-3. Install XFCE, terminal and file manager; add Godot 4, Chromium and Blender through verified ARM64 sources.
-4. Add safe app-private folder creation/deletion and Android Storage Access Framework access for user-selected shared folders.
-5. Build/install/test the full flow on-device before calling it complete.
+A passing Android CI run means the APK compiles, carries ARM64 native libraries, and includes the hash-verified PRoot assets. It does **not** mean first-run installation succeeds on an Android device or that the X11 test window appeared. Physical tests still needed: install the APK on an ARM64 phone, complete first-run download/extraction, check available storage, run PRoot and Debian `apt-get`, verify `xmessage` renders in Lorie, stop/restart the display, and confirm private folders/SAF permissions. Only after those tests and later XFCE/application work may the project be assessed against the desktop-ready gate.
