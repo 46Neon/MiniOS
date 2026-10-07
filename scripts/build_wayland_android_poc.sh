@@ -134,7 +134,7 @@ cp "$TARGET_PREFIX"/lib/libwayland-server.so* "$ARTIFACT/lib/"
 cp "$TARGET_PREFIX"/lib/libwayland-client.so* "$ARTIFACT/lib/"
 cp "$TARGET_PREFIX"/lib/libffi.so* "$ARTIFACT/lib/"
 
-SERVER="$(find "$ARTIFACT/lib" -maxdepth 1 -type f -name 'libwayland-server.so.*' | sort | head -n 1)"
+SERVER="$ARTIFACT/lib/libwayland-server.so"
 [[ -n "$SERVER" && -s "$SERVER" ]] || { echo 'Expected libwayland-server ELF missing' >&2; ls -la "$ARTIFACT/lib"; exit 1; }
 file "$SERVER" | tee -a "$ARTIFACT/build-metadata.txt"
 "$READELF" --file-header "$SERVER" | tee "$WORK/server-elf-header.txt"
