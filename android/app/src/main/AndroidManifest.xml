@@ -7,9 +7,24 @@
         android:label="@string/application_name"
         tools:replace="android:name,android:label">
         <activity
+            android:name="org.miniarino.desktop.HomeActivity"
+            android:exported="true"
+            android:label="@string/application_name"
+            android:screenOrientation="unspecified">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
             android:name="com.termux.x11.MainActivity"
             android:exported="true"
             android:label="@string/application_name"
-            tools:replace="android:label" />
+            tools:replace="android:label">
+            <intent-filter tools:node="remove">
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
