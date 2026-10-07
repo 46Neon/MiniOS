@@ -88,7 +88,7 @@ def main():
     test_source = (ROOT / "app/src/androidTest/java/org/miniarino/desktop/LinuxRuntimeExecInstrumentedTest.java").read_text(encoding="utf-8")
     if "appPrivateProotExecutesGuestCommand" not in test_source or "proot-test-x86_64/bin/proot" not in test_source or "MINIARINO_PROOT_GUEST_OK" not in test_source:
         raise SystemExit("The Android instrumentation test must execute PRoot from private storage and run a guest command")
-    if "--arch x86_64" not in (ROOT.parent / ".github/workflows/android-apk-spike.yml").read_text(encoding="utf-8"):
+    if "--arch x86_64" not in (ROOT.parent / ".github/workflows/android-apk-desktop.yml").read_text(encoding="utf-8"):
         raise SystemExit("The x86_64 PRoot runtime fixture must be staged for emulator runtime testing")
     if "awaitXfceSession(process, logFile)" not in activity or "showEmbeddedDesktop()" not in activity or "Copy diagnostics" not in activity:
         raise SystemExit("Android UI must show only a ready desktop and keep copy/share diagnostics available on failure")

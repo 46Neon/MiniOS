@@ -6,30 +6,33 @@ IMAGE := build/os.img
         termux-native-profile test test-termux-native image verify run debug \
         selftest test-qemu-runner clean legacy-image legacy-verify legacy-run legacy-debug
 
-# Deliberately safe default: print native-first guidance; do not build an image,
-# install packages, or launch a GUI as a side effect of plain `make`.
+# Safe default: help only. In particular, plain `make` never creates the
+# historical multi-GiB image, installs packages, builds an APK, or launches a GUI.
 .DEFAULT_GOAL := help
 all: help
 
 help native-help:
 	@printf '%s\n' \
-	  'MiniAriño — Termux + Termux:X11 (propuesta local; requiere prueba en Android)' \
+	  'MiniAriño — escritorio Linux objetivo en una sola APK Android' \
 	  '' \
-	  '  make termux-native-check    Inspección sin instalar paquetes' \
-	  '  make termux-native-install  Instalación opt-in; solicita confirmación en Termux' \
-	  '  make termux-native-chromium Instalar Chromium opcional en XFCE (Termux)' \
-	  '  make termux-native-blender  Instalar Blender experimental (TUR, solicita confirmación)' \
+	  '  Desarrollo APK: consulta android/README.md y docs/APK_DESKTOP_ROADMAP.md' \
+	  '  make test                  Pruebas host-safe heredadas; no validan Android/XFCE' \
+	  '' \
+	  '  Objetivos preservados (no son el producto APK):' \
+	  '  make termux-native-check    Inspección Termux sin instalar paquetes' \
+	  '  make termux-native-install  Instalación opt-in; solicita confirmación' \
+	  '  make termux-native-chromium Instalar Chromium opcional en Termux/XFCE' \
+	  '  make termux-native-blender  Instalar Blender experimental (TUR, opt-in)' \
 	  '  make termux-native-doctor   Diagnóstico de solo lectura' \
-	  '  make termux-native-profile Aplicar perfil móvil aislado y reversible' \
-	  '  make termux-native-start    Iniciar XFCE en Termux:X11' \
-	  '  make termux-native-stop     Detener la sesión administrada' \
-	  '  make test                  Pruebas locales seguras (sin Android GUI)' \
+	  '  make termux-native-profile Perfil móvil Termux/XFCE opt-in y reversible' \
+	  '  make termux-native-start/stop Controlar sesión Termux/X11 heredada' \
 	  '' \
-	  '  make legacy-image / legacy-verify / legacy-run  Ruta Debian/QEMU manual heredada' \
-	  '  make clean                               Limpiar temporales heredados (no borra os.img)'
+	  '  Ruta de imagen Debian/QEMU heredada y manual:' \
+	  '  make legacy-image / legacy-verify / legacy-run' \
+	  '  make clean                               Limpiar temporales; no borra os.img'
 
-# Current product path: native packages in Termux, displayed by the local
-# Termux:X11 Android app. No distro, PRoot, QEMU, APK, or network server.
+# Preserved experimental scripts for a separate Termux/X11 path. They are not
+# the standalone APK product and are never invoked by the default target.
 termux-native-check:
 	./scripts/termux-native/install.sh --check
 
