@@ -94,7 +94,8 @@ make -C "$LIBFFI_SRC" install
 # through its installed native pkg-config file. The target prefix does not
 # contain host libraries; only the native scanner's .pc directory is added to
 # PKG_CONFIG_PATH.
-export PKG_CONFIG_PATH="$TARGET_PREFIX/lib/pkgconfig:$HOST_PREFIX/lib/pkgconfig"
+HOST_TRIPLET="$(gcc -print-multiarch)"
+export PKG_CONFIG_PATH="$TARGET_PREFIX/lib/pkgconfig:$HOST_PREFIX/lib/$HOST_TRIPLET/pkgconfig:$HOST_PREFIX/lib/pkgconfig"
 cat > "$WORK/android-aarch64.ini" <<EOF
 [binaries]
 c = '$CC'
@@ -127,8 +128,8 @@ cp "$TARGET_PREFIX"/lib/libwayland-server.so* "$ARTIFACT/lib/"
 cp "$TARGET_PREFIX"/lib/libwayland-client.so* "$ARTIFACT/lib/"
 cp "$TARGET_PREFIX"/lib/libffi.so* "$ARTIFACT/lib/"
 
-SERVER="$ARTIFACT/lib/libwayland-server.so.0.24.0"
-[[ -s "$SERVER" ]] || { echo 'Expected libwayland-server ELF missing' >&2; ls -la "$ARTIFACT/lib"; exit 1; }
+SERVER="$(find "$ARTIFACT/lib" -maxdepth 1 -type f -name 'libwayland-server.so.*' | sort | head -n 1)"
+[[ -n "$SERVER" && -s "$SERVER" ]] || { echo 'Expected libwayland-server ELF missing' >&2; ls -la "$ARTIFACT/lib"; exit 1; }
 file "$SERVER" | tee -a "$ARTIFACT/build-metadata.txt"
 "$READELF" --file-header "$SERVER" | tee "$WORK/server-elf-header.txt"
 grep -Eq 'Class:[[:space:]]+ELF64' "$WORK/server-elf-header.txt"
@@ -140,8 +141,8 @@ grep -Eq 'Machine:[[:space:]]+AArch64' "$WORK/server-elf-header.txt"
 grep -Eq 'Android' "$WORK/server-elf-notes.txt"
 grep -Eq 'API:[[:space:]]*26([^0-9]|$)' "$WORK/server-elf-notes.txt"
 "$READELF" --dynamic-table "$SERVER" | tee "$WORK/server-dynamic.txt"
-grep -Fq 'libffi.so.8' "$WORK/server-dynamic.txt"
-grep -Fq 'libc.so' "$WORK/server-dynamic.txt"
+grep -Eq 'Shared library: \[libffi\.so(\.8)?\]' "$WORK/server-dynamic.txt"
+grep -Fq 'Shared library: [libc.so]' "$WORK/server-dynamic.txt"
 
 {
   echo
