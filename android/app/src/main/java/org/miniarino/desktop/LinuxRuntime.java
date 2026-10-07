@@ -36,6 +36,8 @@ final class LinuxRuntime {
     static final String OCI_MANIFEST_DIGEST = "sha256:a1b86db52ce3daef089e45aabe36dfec4091f82464c25c1fdcf03de197cbe82a";
     static final String ROOTFS_LAYER_SHA256 = "c75f989a229d12b2d2613a5997de9ff3546f664c22da9248720033a2410220f6";
     static final long ROOTFS_LAYER_BYTES = 28137179L;
+    private static final String ROOTFS_CONFIG_SHA256 = "sha256:2a64693fa3d2d9c0fd20e6e74c9001aa672a1c081fce5178d104ef160231c409";
+    private static final String ROOTFS_DIFF_ID = "sha256:dca69811453d69d10b6c0345a5c49147162abe20a2f77802d66efc60667949ea";
     private static final String DOCKER_TOKEN_URL = "https://auth.docker.io/token?service=registry.docker.io&scope=repository%3Alibrary%2Fdebian%3Apull";
     private static final String OCI_MANIFEST_URL = "https://registry-1.docker.io/v2/library/debian/manifests/" + OCI_MANIFEST_DIGEST;
     private static final String ROOTFS_BLOB_URL = "https://registry-1.docker.io/v2/library/debian/blobs/sha256:" + ROOTFS_LAYER_SHA256;
@@ -188,8 +190,9 @@ final class LinuxRuntime {
         String mediaType = layer.optString("mediaType", "<missing>");
         String digest = layer.optString("digest", "<missing>");
         long size = layer.optLong("size", -1L);
-        if (!"application/vnd.oci.image.layer.v1.tar+gzip".equals(mediaType) || !ROOTFS_LAYER_SHA256.equals(digest) || size != ROOTFS_LAYER_BYTES) {
-            throw new IOException("Pinned Debian ARM64 layer[0] mismatch: expected application/vnd.oci.image.layer.v1.tar+gzip " + ROOTFS_LAYER_SHA256 + " (" + ROOTFS_LAYER_BYTES + " bytes), received " + mediaType + " " + digest + " (" + size + " bytes)");
+        String expectedLayerDigest = "sha256:" + ROOTFS_LAYER_SHA256;
+        if (!"application/vnd.oci.image.layer.v1.tar+gzip".equals(mediaType) || !expectedLayerDigest.equals(digest) || size != ROOTFS_LAYER_BYTES) {
+            throw new IOException("Pinned Debian ARM64 layer[0] mismatch: expected application/vnd.oci.image.layer.v1.tar+gzip " + expectedLayerDigest + " (" + ROOTFS_LAYER_BYTES + " bytes), received " + mediaType + " " + digest + " (" + size + " bytes)");
         }
     }
 

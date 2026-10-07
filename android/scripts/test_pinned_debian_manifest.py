@@ -73,7 +73,7 @@ def main():
         rejects(mutated, label)
 
     runtime = RUNTIME.read_text(encoding="utf-8")
-    for marker in ("verifyPinnedManifestDocument(bytes.toByteArray())", "verifyManifestContents(manifest)", "Debian image platform mismatch", "layer count mismatch", "layer[0] mismatch", "ROOTFS_CONFIG_SHA256", "ROOTFS_DIFF_ID"):
+    for marker in ("verifyPinnedManifestDocument(bytes.toByteArray())", "verifyManifestContents(manifest)", "Debian image platform mismatch", "layer count mismatch", "layer[0] mismatch", 'String expectedLayerDigest = "sha256:" + ROOTFS_LAYER_SHA256;', "ROOTFS_CONFIG_SHA256", "ROOTFS_DIFF_ID"):
         if marker not in runtime:
             raise SystemExit("Android manifest verifier lacks tested check/diagnostic: " + marker)
     activity = ACTIVITY.read_text(encoding="utf-8")
