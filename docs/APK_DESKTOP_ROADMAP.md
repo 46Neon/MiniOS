@@ -1,75 +1,119 @@
 # Hoja de ruta: escritorio MiniAriño en una sola APK
 
-## Decisión de producto
+> **Decisión/propuesta de arquitectura, todavía no implementada ni validada.** El objetivo recomendado es una APK con PRoot ARM64, compositor Wayland de host en Android/NDK y un escritorio XFCE 4.20+ sobre Wayland mediante labwc. Esta hoja no afirma que Wayland, labwc o XFCE estén funcionando en MiniAriño. Véase también [`ARCHITECTURE.md`](../ARCHITECTURE.md).
 
-La entrega objetivo es una APK de MiniAriño que se instala y presenta el escritorio desde la propia aplicación Android. No debe requerir Termux, Termux:X11, una segunda APK, comandos en una terminal ajena ni un salto de aplicación para mostrar la pantalla. La imagen histórica Debian/QEMU de hasta 16 GB queda fuera del producto y de las rutas de CI predeterminada y pull request; sus scripts y recursos se conservan solo para compatibilidad/revisión.
+## Decisión de producto y arquitectura objetivo
 
-El modelo de almacenamiento objetivo no es empaquetar una imagen monolítica de 16 GB. Debe usar una base de sistema pequeña, fijada e íntegra que se descargue una vez y se extraiga dentro del almacenamiento privado de la APK, más una capa de datos privada para paquetes instalados, actualizaciones, caché, configuración y archivos del usuario. El rootfs de Debian ARM64 actualmente fijado tiene una capa comprimida de aproximadamente 28 MB; el espacio extraído y el de XFCE y sus dependencias es mayor y todavía debe medirse en dispositivos reales. La app debe informar del espacio necesario antes de descargar, distinguir descarga/base de uso instalado, gestionar fallos/pausa/reanudación y permitir recuperación segura. No publicar una cifra de huella instalada hasta medirla.
+La entrega objetivo es **una sola APK** que configura e inicia el escritorio desde su propia interfaz. No debe depender en tiempo de ejecución de Termux, Termux:X11, VNC ni otra aplicación externa, y no debe exigir developer options. El usuario no debe tener que ejecutar comandos en una terminal externa. La imagen histórica Debian/QEMU de hasta 16 GB no es el producto: conservar su código/recursos solo como legado o compatibilidad, sin afirmar que ya se retiró o que la ruta actual fue reemplazada.
 
-## Estado verificado y límites
+Arquitectura recomendada para evaluar:
 
-El prototipo actual empaqueta la interfaz Android, PRoot y código/nativos del servidor gráfico Lorie. Los emuladores x86_64 API 26, 29, 30 y 35 verifican instalación/arranque de la app y un comando de PRoot en un root invitado sintético. No verifican PRoot ARM64, Debian ARM64, instalación APT de XFCE, renderizado o entrada de Lorie, un escritorio completo ni uso en teléfono.
+- **Almacenamiento:** userland ARM64 PRoot, provisionado incrementalmente en almacenamiento privado de la APK, no una imagen fija de 16 GB. Mantener base verificada separada del estado mutable de paquetes, configuración, cachés y archivos de usuario.
+- **Candidato inicial de rootfs:** Debian Trixie ARM64 es el candidato preferido a evaluar primero porque el índice oficial de paquetes de Trixie lista `xfce4-session` `4.20.2-2`. Esto solo confirma que existe un paquete candidato; no demuestra una sesión Wayland operativa. Arch ARM64 queda como comparación, no como predeterminado.
+- **Gráficos:** un compositor Wayland alojado por la app Android/NDK renderiza en la superficie nativa de Android y ofrece un socket Wayland a clientes invitados. **labwc es el componente compositor/sesión anidado del lado invitado**; no es el compositor Wayland Android-host ni debe usarse por sí solo como primera prueba Android. Tras el PoC del host, evaluar labwc; después evaluar XFCE 4.20 o posterior sobre Wayland en labwc. La compatibilidad Wayland de XFCE 4.20 es experimental y requiere validación real.
+- **X11 heredado:** Xwayland es opcional y posterior, únicamente si hacen falta aplicaciones X11. No es parte obligatoria del camino Wayland inicial.
+- **Código legado:** la arquitectura final no debe tener un parche/transformación de Lorie durante la compilación. El prototipo actual sí usa Lorie/X11 y su integración existente se mantiene como prototipo hasta que haya una alternativa implementada, probada y sustituible de manera segura; esta decisión no afirma que se haya retirado Lorie.
 
-Lorie procede del submódulo Termux:X11 fijado y `android/scripts/prepare_x11.py` transforma su código durante la compilación. Esto es una adaptación de fuentes de compilación, no una modificación de una app instalada ni una dependencia de Termux/Termux:X11 en tiempo de ejecución. Mantener la transformación mientras sea necesaria para construir el servidor; reemplazarla por un módulo/fork de Lorie mantenido en el repositorio es una fase planificada, no una eliminación silenciosa que rompa el APK.
+## PoC gráfico obligatorio: host Wayland real primero
+
+El primer PoC debe construir y ejecutar dentro de la aplicación Android un **compositor Wayland de host**, integrado mediante Android/NDK y renderizado en la superficie nativa de Android. Debe exponer su socket a un cliente Wayland mínimo que corre dentro del PRoot ARM64 invitado y demostrar, de extremo a extremo:
+
+1. conexión del cliente invitado al socket del compositor host, verificando ruta, acceso/permisos y el mecanismo de exposición a través de PRoot;
+2. renderizado en Android de una ventana de prueba de color sólido creada por el cliente invitado; y
+3. envío de entrada táctil y de teclado desde Android, a través del compositor, al cliente invitado, con confirmación observable de recepción.
+
+Comprobar también inicio, cierre, pérdida de superficie, errores y limpieza de procesos/socket. **Solo después** de pasar esta puerta se añade labwc como compositor/sesión anidado del invitado, y después XFCE.
+
+Esto es sustancialmente más que dibujar una superficie o maqueta con `Canvas`: requiere un servidor Wayland y protocolo cliente-servidor reales, buffers/superficies y composición, traducción de eventos de entrada, socket accesible entre Android y PRoot, sincronización, ciclo de vida y diagnósticos. Una vista Canvas de color o un renderizado de prueba que no involucre al cliente invitado no pasa la puerta.
+
+## Estado verificado y límites actuales
+
+- El prototipo actual empaqueta interfaz Android, PRoot y código/nativos del servidor gráfico **Lorie/X11**. El APK declara `targetSdk 28`.
+- Existe `android/scripts/prepare_x11.py`, que transforma durante compilación fuentes relacionadas con Lorie procedentes del submódulo Termux:X11 fijado. No es una modificación de una app Termux:X11 instalada ni una dependencia de runtime de Termux/Termux:X11; sin embargo, sí es parte de la ruta de build actual. La arquitectura final propuesta no debe depender de este parche de compilación.
+- La rama todavía no ha validado XFCE en un dispositivo físico. No hay validación física de escritorio XFCE.
+- La evidencia de CI existente es solo un **smoke PRoot en emulador x86_64**: instalación/arranque de la aplicación y comando en un root invitado sintético. No prueba PRoot ARM64, rootfs Debian ARM64 real, paquetes APT de XFCE, compositor integrado, renderizado Wayland/X11, entrada táctil/teclado ni una sesión de escritorio utilizable.
+- El diseño Wayland, compositor Android/NDK, comunicación socket host-invitado, labwc y XFCE Wayland todavía **no son código**. Ninguna funcionalidad de esta propuesta debe presentarse como implementada o validada.
+- El rootfs Debian ARM64 fijado en la ruta existente se ha descrito con una capa comprimida de aproximadamente 28 MB; la ocupación expandida, las dependencias del candidato Trixie y la huella instalada no están medidas por dispositivo. No extrapolar esa medida del rootfs existente al nuevo candidato ni publicar una cifra instalada hasta medirla.
+- No borrar ni describir falsamente la ruta actual de Lorie/X11 como reemplazada. La migración solo podrá declararse al implementar y validar un sustituto y actualizar explícitamente el estado de las fases.
 
 ## Fases y puertas de aceptación
 
-### 0. Identidad, firma y ciclo de actualización — pendiente
+### 0. Identidad, firma y actualización — pendiente
 
-**Trabajo:** decidir la identidad permanente de paquete, `versionCode`/`versionName`, clave y proceso de custodia de firma, rotación respaldada y política debug/release. El sufijo `.sdk28test` evita colisión al probar el paquete debug actual, pero no es una identidad de lanzamiento. Los APKs de depuración de ejecuciones distintas pueden tener claves distintas.
+**Trabajo:** decidir identidad permanente de paquete, `versionCode`/`versionName`, clave de firma y custodia, rotación respaldada y política debug/release. El sufijo `.sdk28test` del paquete debug actual no es identidad de lanzamiento; APKs debug de distintas ejecuciones pueden tener claves distintas.
 
-**Puerta:** una APK firmada con la clave acordada instala limpia y actualiza una versión anterior sin desinstalar ni perder datos; los metadatos de identidad y certificado se comprueban en CI. Documentar custodia/restauración de clave. Hasta entonces no prometer actualización fluida ni estabilidad de firma.
+**Puerta:** APK firmada con clave acordada instala limpia y actualiza versión previa conservando datos; CI comprueba metadatos y certificado. Documentar custodia/restauración. No prometer actualización fluida ni estabilidad de firma antes de pasar esta puerta.
 
-### 1. APK reproducible y pruebas de compatibilidad — parcialmente superada
+### 1. APK reproducible y cobertura Android — parcialmente superada
 
-**Trabajo:** mantener el armado reproducible ARM64, identidad aislada de la APK de prueba y paquete de CI descargable. Conservar el smoke de emulador API 26, 29, 30 y 35 y aclarar en cada informe su alcance.
+**Trabajo:** conservar la APK de prueba ARM64 y su identidad separada, artefactos CI reproducibles y matriz de emulador API 26, 29, 30 y 35. Identificar con precisión arquitectura y alcance de cada prueba; ninguna debe confundirse con ejecución del escritorio en teléfono.
 
-**Puerta:** compilación válida del APK ARM64, verificación automática de paquete/label/minSdk/targetSdk/permisos/bibliotecas/activos/hash y las cuatro pruebas de instalación/launcher/PRoot invitado verdes. La salida se llama de manera inequívoca APK de prueba, con retención y firma descritas. Ninguno de estos resultados se cuenta como prueba de escritorio en ARM64.
+**Puerta:** build APK ARM64 y comprobaciones de paquete, label, `minSdk`, `targetSdk`, permisos, bibliotecas, activos y hash; smoke existentes de instalación, launcher y PRoot invitado verdes. Reportar explícitamente que CI es x86_64 emulado y que no valida escritorio ARM64.
 
-### 2. Base Debian, espacio y recuperación — en desarrollo
+### 2. Selección del rootfs, preflight de almacenamiento y recuperación — pendiente
 
-**Trabajo:** conservar una base ARM64 fijada por hashes; diseñar preparación transaccional/resumible, progreso, verificación, falta de red/espacio, reintentos y recuperación ante cierre del proceso. Separar raíz base de datos de paquetes y datos de usuario para evitar sobrescribir trabajo al actualizar. Mostrar espacio descargado y huella adicional estimada/medida; no usar una imagen fija de 16 GB.
+**Trabajo:** evaluar primero Debian Trixie ARM64, fijar fuentes/versiones y hashes, comparar Arch ARM64 y medir cada candidato. Implementar preparación transaccional/resumible dentro del almacenamiento privado de la APK y separar la base del estado mutable del usuario y paquetes. No empaquetar una imagen monolítica de 16 GB.
 
-**Puerta:** en teléfono ARM64 limpio, instalación interrumpida en cada etapa puede reanudarse o revertirse sin rootfs corrupto; checksums se validan antes de extraer; los datos del usuario sobreviven a una actualización de la base; la app comunica un mínimo de espacio con evidencia medida y ofrece cancelación limpia. Medir tanto descarga comprimida como espacio real de base, XFCE y cachés.
+La preflight debe ser **parte de la aplicación Android**, consultar `StatFs` sobre el volumen/destino de app-private storage y mostrar claramente:
 
-### 3. PRoot y Debian ARM64 real — no comprobada en dispositivo
+- bytes comprimidos requeridos para descargar el rootfs;
+- bytes medidos para expandir la base;
+- bytes medidos para paquetes XFCE + labwc y dependencias;
+- espacio máximo temporal necesario para descargas, caché de paquetes, extracción y staging; y
+- reserva medida para rollback/recuperación mientras se conserva base o datos previos.
 
-**Trabajo:** probar los binarios ARM64 fijados, dependencias, loader, binds, permisos y comandos invitados en el kernel de Android. Mantener las pruebas de emulador x86_64 como cobertura distinta.
+Mostrar por separado descarga, ocupación instalada y pico temporal. Recalcular/revisar espacio disponible antes de fases grandes. **No** sustituir la preflight de producto por un script Python/shell para que lo ejecute el usuario, y no afirmar una huella instalada sin mediciones reproducibles en dispositivos ARM64.
 
-**Puerta:** en teléfono ARM64 objetivo, MiniAriño inicia el PRoot ARM64 desde su propio almacenamiento, monta el rootfs invitado Debian ARM64, verifica arquitectura, ejecuta shell y comandos de prueba sin Termux ni app auxiliar. Repetir tras reinstalación limpia y tras reanudar preparación. Adjuntar versión/dispositivo/logs depurados.
+El primer uso debe tener progreso, checkpoints validados y reanudación tras cierre o muerte del proceso; validar integridad antes de activar una base; promover staging de forma atómica; hacer posible rollback sin perder datos. Definir explícitamente red y modo offline: descargar solo entradas fijadas/verificables; permitir modo sin conexión únicamente si todos los insumos necesarios ya están presentes y validados. Si falta alguno, la UI explica qué requiere conexión y ofrece reintentar. Errores de falta de espacio, red, hash, extracción, cancelación o rollback deben tener UI comprensible, una acción segura y diagnóstico útil; no pedir comandos externos.
 
-### 4. Servidor gráfico integrado (Lorie) — no comprobada en dispositivo
+**Puerta:** instalación interrumpida en cada etapa puede continuar o revertirse sin rootfs corrupto, y los archivos/configuración del usuario sobreviven a actualización. En teléfono ARM64 se reportan tamaños comprimidos, expandidos, paquetes y pico temporal con método y espacio libre observado.
 
-**Trabajo:** mantener servidor y bibliotecas dentro de la APK y el mismo proceso de flujo de producto; proporcionar socket, datos XKB, resolución, ciclo de vida y errores desde MiniAriño. Migrar la adaptación `prepare_x11.py` a módulo/fork integrado y probado, preservando explícitamente licencias, atribución y origen de cada dependencia.
+### 3. PRoot ARM64 y Debian ARM64 real — no comprobada en dispositivo
 
-**Puerta:** Lorie se inicia y termina desde la APK en el teléfono ARM64; la ventana/display embebidos aparecen sin instalar/abrir otra aplicación; prueba real de dibujo, XKB, toque/gesto y una aplicación gráfica mínima; sin dependencia en runtime de una app externa Termux:X11. Verificar que iniciar, parar y fallar deja procesos/socket limpios.
+**Trabajo:** probar binarios ARM64 fijados, dependencias, loader, binds, permisos y comandos invitados sobre Android, usando el almacenamiento privado de la propia APK. No extrapolar resultados de fixture x86_64.
 
-### 5. XFCE y preparación de sesión — no comprobada en dispositivo
+**Puerta:** en dispositivo ARM64 real la app monta e inicia el rootfs ARM64, confirma arquitectura, ejecuta comandos de prueba sin Termux ni app auxiliar y repite tras instalación limpia y reanudación. Registrar dispositivo, Android/API, APK/hash y logs depurados.
 
-**Trabajo:** instalar desde repositorios Debian firmados los paquetes XFCE fijados/permitidos; readiness gate que comprueba D-Bus, gestor de sesión, panel, terminal y gestor de archivos; registrar diagnóstico útil en la app; evitar declarar éxito hasta que sesión y display estén preparados. Hacer que iniciar/detener/reparar pueda hacerse desde la UI.
+### 4. Compositor Wayland host Android/NDK — no implementado
 
-**Puerta:** tras instalación inicial y reinicio, aparecen y funcionan sesión XFCE, panel, terminal y Thunar en el display integrado; cerrar/parar no deja procesos colgados; un fallo presenta un diagnóstico comprensible y permite recuperación sin terminal externa ni perder archivos. Confirmar conexión teclado/táctil con apps visibles.
+**Trabajo:** implementar el primer PoC en la app Android: compositor servidor host que dibuja en la superficie nativa, socket accesible desde PRoot ARM64, cliente invitado mínimo, ventana de prueba de color sólido, entrada touch y teclado con confirmación, y gestión de ciclo de vida/errores. Asegurar límites, permisos y modo de exposición del socket sin asumir que el namespace invitado lo ve automáticamente. No usar labwc solo como sustituto del servidor host. No considerar una pantalla Canvas como éxito.
 
-### 6. Uso móvil y ciclo de vida — pendiente
+**Puerta:** en teléfono ARM64, el cliente invitado se conecta realmente al Wayland server de la app, pinta en la superficie Android y recibe entrada táctil/teclado; repetir ciclo parar/reiniciar, pérdida/restauración de superficie y error sin proceso/socket zombi. Adjuntar evidencia/logs. Esta fase precede a labwc y XFCE.
 
-**Trabajo:** definir orientación horizontal/vertical, áreas táctiles, teclado en pantalla/teclado físico, escala, navegación de ventanas, retroceso, notificaciones y controles de sesión. Administrar suspensión, pérdida de proceso/memoria, cierre de pantalla, rotación, app en segundo plano y reinicio explícito.
+### 5. labwc invitado anidado — no implementado
 
-**Puerta:** pruebas de aceptación acordadas pasan con tacto y teclado; la sesión no se informa como viva si su proceso terminó; al volver de suspensión se restaura o reinicia de forma predecible sin pantalla negra; rotación/cambio de app no pierde datos ni rompe Lorie. Documentar límites de fabricantes y pedir captura/log si aparece un error no clasificado.
+**Trabajo:** después de validar fase 4, evaluar labwc como compositor/sesión Wayland anidado del invitado, ejecutado como cliente del compositor host. Verificar configuración, protocolos requeridos, foco, ventanas, entrada y ciclo de vida; medir paquetes y dependencias para la preflight.
 
-### 7. Validación en dispositivos — pendiente
+**Puerta:** labwc se inicia dentro del ARM64 PRoot usando el socket del host, muestra una superficie de sesión y pasa pruebas visibles de dibujo, toque, teclado, inicio, cierre y recuperación en dispositivo. Esto no certifica todavía XFCE.
 
-**Trabajo:** probar teléfono ARM64 objetivo y como mínimo un segundo dispositivo Android compatible, registrar modelo, versión/API, arquitectura, espacio libre, versión APK, SHA-256, resultado y logs. Añadir las rutas de fallo y actualización que no cubren emuladores.
+### 6. Usuario no-root, sesión y XFCE Wayland — no comprobada en dispositivo
 
-**Puerta:** completar checklist desde instalación limpia hasta sesión XFCE, entrada, suspensión/reanudación, parar/reiniciar, actualización y conservación de datos en los dispositivos acordados. La aceptación del emulador y la del dispositivo se reportan separadamente.
+**Requisito de producto:** la app prepara automáticamente un usuario invitado no-root y su sesión usable, sin instrucciones para que el usuario complete setup desde una shell externa. Esta es una tarea futura, no una capacidad ya demostrada. No prometer `sudo` ni creación automática de usuarios/sesiones existente; definir, implementar y probar un modelo de privilegios compatible con PRoot.
 
-### 8. Aplicaciones adicionales — posterior
+**Trabajo:** sobre labwc validado, instalar desde repositorios Debian firmados y fijados el candidato Debian Trixie ARM64 y XFCE 4.20+; confirmar `xfce4-session` 4.20.2-2 en el índice como disponibilidad de paquete, no compatibilidad probada. Investigar la sesión experimental Wayland de XFCE 4.20, D-Bus, session manager, panel, terminal y gestor de archivos. Añadir readiness gate, logs y diagnóstico en UI.
 
-**Trabajo:** valorar navegador, Godot, Blender u otras aplicaciones solo después de un escritorio estable; definir por aplicación memoria/almacenamiento, arquitectura, licencia, actualizaciones, controles y comportamiento Android. No incorporar de golpe paquetes pesados ni afirmar compatibilidad sin ejecución en teléfono.
+**Puerta:** setup automático crea/prepara el usuario y sesión no-root; desde arranque limpio aparece y funciona una sesión XFCE con panel, terminal y gestor de archivos sobre labwc/host Wayland en dispositivo ARM64. Demostrar touch/teclado, detener/reiniciar, cierre limpio y recuperación. Si la sesión falla, presentar error claro; no declarar soporte hasta que pase.
 
-**Puerta:** cada aplicación tiene prueba de instalación/arranque/interacción en el dispositivo ARM64 soportado, presupuesto medido de almacenamiento y memoria y una decisión explícita de inclusión o carácter opcional. Chromium, Godot y Blender no forman parte de la aceptación base actual.
+### 7. Uso móvil, ciclo de vida y almacenamiento persistente — pendiente
 
-## Política de Android y distribución
+**Trabajo:** decidir orientación, escala, controles Android, teclado en pantalla/físico, touch/gestos, retroceso y navegación de ventanas. Gestionar suspensión, app en background, muerte de proceso, pérdida de memoria, rotación, apagado/reinicio, actualización y estado de sesión; mantener datos del usuario separados del rootfs base.
 
-El prototipo actual declara `minSdk 26` (Android 8), `targetSdk 28` y ABI de producto `arm64-v8a`. El target 28 es una decisión de sideload ligada al método actual de ejecutar PRoot desde almacenamiento privado y a restricciones de ejecución de Android para targets más nuevos. Tiene coste de avisos/restricciones y no cumple por sí solo los requisitos actuales de Google Play. No afirmar elegibilidad para Play Store. La migración a target actual exige rediseñar y verificar el modelo de ejecución antes de cambiar el número.
+**Puerta:** las pruebas acordadas de interacción y ciclo de vida pasan en los dispositivos soportados, con sesión viva reportada solo cuando los procesos lo están y sin pérdida de datos tras recuperación o actualización.
 
-Las pruebas de compatibilidad CI conocidas son emuladores x86_64 API 26, 29, 30 y 35 y prueban el fixture PRoot x86_64 más un root invitado sintético. La APK candidata es ARM64; ni esa matriz ni la existencia de su artefacto prueban el escritorio ARM64 completo.
+### 8. Pruebas físicas, compatibilidad y migración — pendiente
+
+**Trabajo:** probar el teléfono ARM64 objetivo y al menos un segundo dispositivo Android compatible. Registrar modelo, Android/API, ABI, espacio disponible, versión APK, SHA-256, resultado y logs. Mantener resultados emulados y físicos en columnas separadas. Retirar Lorie y la transformación de build únicamente después de que el camino reemplazante haya superado sus puertas y se haya actualizado el inventario/licencias correspondiente.
+
+**Puerta:** aceptación desde instalación limpia hasta setup, escritorio XFCE Wayland, render/input, pausa/reanudación, falta de red/espacio, parar/reiniciar, actualización y conservación de datos. Solo tras las pruebas de reemplazo se puede afirmar que la ruta Lorie/X11 fue sustituida; preservar los scripts/recursos históricos que aún sean necesarios para compatibilidad o documentar su eliminación deliberada.
+
+### 9. Xwayland y aplicaciones adicionales — opcional/posterior
+
+**Trabajo:** evaluar Xwayland como compatibilidad opcional después del escritorio Wayland estable. Chromium, Godot, Blender u otras aplicaciones requieren decisión separada por memoria/almacenamiento, arquitectura, licencia, actualizaciones y controles móviles.
+
+**Puerta:** cada compatibilidad se demuestra mediante instalación y uso en dispositivo ARM64, con presupuestos medidos. No contar esos paquetes como aceptación básica ni afirmar soporte sin prueba.
+
+## Política Android y distribución
+
+El prototipo actual declara `minSdk 26` (Android 8), `targetSdk 28` y ABI de producto `arm64-v8a`. Mantener estas características como hechos del prototipo, no como decisión validada para el producto final. El método actual de ejecución de PRoot y sus restricciones de Android no autorizan a inferir compatibilidad con targets actuales ni elegibilidad para Google Play. Cualquier cambio de target requiere rediseñar y probar el modelo de ejecución; no cambiar el número sin evidencia. No exigir developer options.
+
+La matriz CI conocida usa emuladores x86_64 API 26, 29, 30 y 35, con fixture PRoot x86_64 y root invitado sintético. Aunque pase, no demuestra desktop PRoot ARM64, sesión Wayland/XFCE o uso en un teléfono.
