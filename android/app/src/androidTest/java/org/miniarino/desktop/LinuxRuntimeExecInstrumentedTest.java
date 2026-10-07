@@ -27,6 +27,8 @@ import static org.junit.Assert.assertTrue;
 public final class LinuxRuntimeExecInstrumentedTest {
     private static final String TAG = "MiniArinoExecTest";
     private static final String SUCCESS = "MINIARINO_PROOT_GUEST_OK";
+    private static final String KNOWN_LINKER_WARNING =
+            "WARNING: linker: Warning: failed to find generated linker configuration from \"/linkerconfig/ld.config.txt\"";
 
     @Test(timeout = 900000L)
     public void appPrivateProotExecutesGuestCommand() throws Exception {
@@ -82,7 +84,15 @@ public final class LinuxRuntimeExecInstrumentedTest {
         }
         String output = read(log).trim();
         assertEquals("PRoot host process and guest /bin/sh must exit successfully: " + output, 0, exit);
-        assertEquals("The guest shell must execute and return its marker", SUCCESS, output);
+        boolean markerFound = false;
+        for (String line : output.split("\\R")) {
+            if (SUCCESS.equals(line)) {
+                markerFound = true;
+            } else {
+                assertEquals("Unexpected PRoot output line", KNOWN_LINKER_WARNING, line);
+            }
+        }
+        assertTrue("The guest shell must emit its marker as a complete output line", markerFound);
         Log.i(TAG, "PASS: x86_64 PRoot executed a guest command from an app-private root on Android API " + Build.VERSION.SDK_INT);
     }
 
