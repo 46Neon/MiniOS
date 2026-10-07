@@ -33,6 +33,12 @@ else
   printf 'BLENDER: no instalado (opcional; requiere autorizar el repositorio externo TUR con install.sh --install-blender).\n'
 fi
 
+if [[ -x "$PREFIX/bin/godot" ]]; then
+  printf 'GODOT: comando disponible en %s; ejecuta godot --version y valida la ventana del editor en XFCE.\n' "$PREFIX/bin/godot"
+else
+  printf 'GODOT: no instalado (opcional; install.sh --install-godot desde x11-repo).\n'
+fi
+
 if [[ -d "$HOME/storage/shared" ]]; then
   printf 'Almacenamiento Android: existe %s (la accesibilidad depende de permisos Android).\n' "$HOME/storage/shared"
 else
