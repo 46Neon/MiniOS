@@ -227,7 +227,7 @@ validate_android_shared_library libwayland_android_host.so
 grep -Eq 'Shared library: \[libffi\.so(\.8)?\]' "$WORK/server-dynamic.txt"
 grep -Fq 'Shared library: [libc.so]' "$WORK/server-dynamic.txt"
 "$READELF" --dynamic-table "$ARTIFACT/lib/libwayland_android_host.so" | tee "$WORK/jni-dynamic.txt"
-for needed in libwayland-server.so.0 libwayland-client.so.0 libc++_shared.so; do
+for needed in libwayland-server.so libwayland-client.so libc++_shared.so; do
   grep -Fq "Shared library: [$needed]" "$WORK/jni-dynamic.txt" || {
     echo "JNI library does not need expected runtime SONAME $needed" >&2; exit 1;
   }

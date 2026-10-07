@@ -48,7 +48,9 @@ jobs:
           packages: platform-tools
 
       - name: Install build tools and Android 8, 10, 11 and 15 emulator images
-        run: sdkmanager --install 'platforms;android-34' 'build-tools;34.0.0' 'platforms;android-35' 'build-tools;35.0.0' 'emulator' 'system-images;android-26;google_apis;x86_64' 'system-images;android-29;google_apis;x86_64' 'system-images;android-30;google_apis;x86_64' 'system-images;android-35;google_apis;x86_64' 'ndk;29.0.14206865' 'cmake;3.22.1'
+        run: |
+          sdkmanager --install 'platforms;android-34' 'build-tools;34.0.0' 'platforms;android-35' 'build-tools;35.0.0' 'emulator' 'system-images;android-26;google_apis;x86_64' 'system-images;android-29;google_apis;x86_64' 'system-images;android-30;google_apis;x86_64' 'system-images;android-35;google_apis;x86_64' 'ndk;29.0.14206865' 'cmake;3.22.1'
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
 
       - name: Install native Wayland cross-build host tools
         run: |

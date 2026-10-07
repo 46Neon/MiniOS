@@ -76,14 +76,14 @@ jobs:
           "$aapt" dump badging "$apk" | grep -F "sdkVersion:'26'"
           "$aapt" dump badging "$apk" | grep -F "targetSdkVersion:'28'"
           entries="$(unzip -Z1 "$apk")"
-          for name in libwayland_android_host.so libwayland-server.so.0 libwayland-client.so.0 libffi.so.8 libc++_shared.so; do
+          for name in libwayland_android_host.so libwayland-server.so libwayland-client.so libffi.so.8 libc++_shared.so; do
             printf '%s\n' "$entries" | grep -Fx "lib/arm64-v8a/$name"
           done
           for notice in libwayland-COPYING-MIT-Expat.txt libffi-LICENSE.txt llvm-libcxx-LICENSE.TXT; do
             printf '%s\n' "$entries" | grep -Fx "assets/third-party-notices/wayland-poc/$notice"
           done
           printf '%s\n' "$entries" | awk '/^lib\/[^/]+\/[^/]+\.so$/ { if ($0 !~ /^lib\/arm64-v8a\//) unexpected=1 } END { exit unexpected }'
-          for library in libwayland_android_host.so libwayland-server.so.0 libwayland-client.so.0 libffi.so.8; do
+          for library in libwayland_android_host.so libwayland-server.so libwayland-client.so libffi.so.8; do
             unzip -p "$apk" "lib/arm64-v8a/$library" > "/tmp/$library"
             file "/tmp/$library" | grep -F 'ARM aarch64'
           done
