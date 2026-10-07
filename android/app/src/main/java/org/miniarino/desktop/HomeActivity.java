@@ -29,7 +29,8 @@ public final class HomeActivity extends Activity {
     private TextView pathLabel;
     private TextView status;
     private static Process xServerProcess;
-    private static Process linuxClientProcess;
+    private static Process linuxDesktopProcess;
+    private static boolean desktopSetupInProgress;
     private static final java.util.concurrent.ExecutorService SETUP_EXECUTOR = java.util.concurrent.Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private LinuxRuntime linuxRuntime;
@@ -77,11 +78,11 @@ public final class HomeActivity extends Activity {
         displayActions.addView(button("Start / open X11", v -> openDisplay()), new LinearLayout.LayoutParams(0, -2, 1));
         displayActions.addView(button("Stop X server", v -> stopXServer()), new LinearLayout.LayoutParams(0, -2, 1));
         root.addView(displayActions);
-        root.addView(button("Install Debian ARM64 + launch X11 test client", v -> installAndLaunchLinuxClient()));
+        root.addView(button("Install XFCE desktop + start session", v -> installAndLaunchXfceDesktop()));
         status = new TextView(this);
         status.setText(linuxRuntime.isReady()
-                ? "Debian ARM64 root filesystem is installed in private app storage. No desktop environment is installed yet."
-                : "Lorie X11 is embedded. Debian ARM64 and a Linux X11 test client can be downloaded on first use; no desktop is installed yet.");
+                ? "Debian ARM64 is installed in private app storage. Install XFCE, a terminal and Thunar, then start the desktop session on embedded Lorie :0."
+                : "Embedded Lorie X11 and a private Debian ARM64 root filesystem will be prepared on first use. XFCE, a terminal and Thunar are not installed yet.");
         status.setTextSize(13);
         status.setTextColor(0xff526174);
         status.setPadding(0, dp(4), 0, dp(8));
@@ -121,7 +122,7 @@ public final class HomeActivity extends Activity {
         refreshListing();
     }
 
-    private void openDisplay() {
+    private boolean openDisplay() {
         try {
             File tmp = new File(getFilesDir(), "tmp");
             if (!tmp.exists() && !tmp.mkdirs()) throw new IOException("Unable to prepare X11 temporary directory");
@@ -142,36 +143,56 @@ public final class HomeActivity extends Activity {
             display.setClassName(getPackageName(), "com.termux.x11.MainActivity");
             display.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             startActivity(display);
-            status.setText("Started embedded Lorie X server process and opened its display window. No Linux desktop session is installed yet.");
+            if (status != null) status.setText("Opening embedded Lorie :0. Desktop readiness will be checked before reporting success.");
+            return true;
         } catch (Exception e) {
-            status.setText("Could not start the embedded X server: " + e.getMessage());
+            if (status != null) status.setText("Could not open the embedded X display: " + e.getMessage());
             Toast.makeText(this, "X11 startup failed; see status above", Toast.LENGTH_LONG).show();
+            return false;
         }
     }
 
-    private void installAndLaunchLinuxClient() {
-        if (linuxClientProcess != null && isAlive(linuxClientProcess)) {
-            status.setText("A Debian setup or X11 test client is already running.");
+    private void installAndLaunchXfceDesktop() {
+        synchronized (HomeActivity.class) {
+            if (desktopSetupInProgress || (linuxDesktopProcess != null && isAlive(linuxDesktopProcess))) {
+                status.setText("XFCE installation or desktop session is already running.");
+                return;
+            }
+            desktopSetupInProgress = true;
+        }
+        if (!openDisplay()) {
+            synchronized (HomeActivity.class) { desktopSetupInProgress = false; }
             return;
         }
-        openDisplay();
-        status.setText("Starting first-run Debian ARM64 setup in private app storage…");
+        status.setText("Preparing Debian ARM64 and installing XFCE, xfce4-terminal, Thunar and D-Bus in private app storage. This can take several minutes; no desktop success is reported until the XFCE session manager starts.");
         SETUP_EXECUTOR.execute(() -> {
+            Process process = null;
+            File logFile = new File(getFilesDir(), "xfce-desktop.log");
             try {
                 linuxRuntime.provision(message -> mainHandler.post(() -> { if (status != null) status.setText(message); }));
-                mainHandler.post(() -> { if (status != null) status.setText("Debian is provisioned. Installing the small x11-utils package, then launching xmessage on Lorie :0…"); });
                 Thread.sleep(2500L);
-                Process process = linuxRuntime.startXMessage(new File(getFilesDir(), "debian-x11-client.log"));
-                synchronized (HomeActivity.class) { linuxClientProcess = process; }
-                mainHandler.post(() -> { if (status != null) status.setText("Debian ARM64 is provisioned. PRoot is installing x11-utils and will launch the xmessage X11 test client; log: app-private debian-x11-client.log."); });
+                synchronized (HomeActivity.class) {
+                    if (xServerProcess == null || !isAlive(xServerProcess)) throw new IOException("Embedded Lorie X server exited before desktop startup; see x11-server.log.");
+                }
+                process = linuxRuntime.startXfceDesktop(logFile);
+                synchronized (HomeActivity.class) { linuxDesktopProcess = process; }
+                mainHandler.post(() -> { if (status != null) status.setText("Installing/verifying XFCE packages and starting the session on Lorie :0. Waiting for the XFCE session manager and desktop applications… log: xfce-desktop.log."); });
+                linuxRuntime.awaitXfceSession(process, logFile);
+                Process running = process;
+                mainHandler.post(() -> { if (status != null && isAlive(running)) status.setText("XFCE desktop session is running on embedded Lorie :0. xfce4-terminal and Thunar were launched. Stop X server ends the session. Log: xfce-desktop.log."); });
                 int exit = process.waitFor();
-                synchronized (HomeActivity.class) { if (linuxClientProcess == process) linuxClientProcess = null; }
-                if (exit != 0) mainHandler.post(() -> { if (status != null) status.setText("Linux X11 client exited with code " + exit + "; inspect debian-x11-client.log in app-private storage. The desktop is not installed."); });
+                synchronized (HomeActivity.class) { if (linuxDesktopProcess == process) linuxDesktopProcess = null; }
+                mainHandler.post(() -> { if (status != null) status.setText("XFCE desktop session ended (exit code " + exit + "). Start it again with the desktop button; details are in xfce-desktop.log."); });
             } catch (Exception e) {
+                if (process != null && isAlive(process)) process.destroy();
+                synchronized (HomeActivity.class) { if (linuxDesktopProcess == process) linuxDesktopProcess = null; }
+                final String failure = e.getMessage();
                 mainHandler.post(() -> {
-                    if (status != null) status.setText("Debian/X11 setup did not complete: " + e.getMessage() + ". No desktop is installed; see app-private logs.");
-                    Toast.makeText(HomeActivity.this, "Linux setup failed; see status and app-private log", Toast.LENGTH_LONG).show();
+                    if (status != null) status.setText("XFCE desktop did not start: " + failure + " No desktop success was reported; inspect xfce-desktop.log and x11-server.log in app-private storage.");
+                    Toast.makeText(HomeActivity.this, "Desktop startup failed; see status and app-private logs", Toast.LENGTH_LONG).show();
                 });
+            } finally {
+                synchronized (HomeActivity.class) { desktopSetupInProgress = false; }
             }
         });
     }
@@ -182,20 +203,22 @@ public final class HomeActivity extends Activity {
     }
 
     private void stopXServer() {
+        boolean hadTrackedProcess = false;
         synchronized (HomeActivity.class) {
-            if (linuxClientProcess != null && isAlive(linuxClientProcess)) {
-                linuxClientProcess.destroy();
-                linuxClientProcess = null;
+            if (linuxDesktopProcess != null && isAlive(linuxDesktopProcess)) {
+                linuxDesktopProcess.destroy();
+                hadTrackedProcess = true;
             }
-            if (xServerProcess == null || !isAlive(xServerProcess)) {
-                xServerProcess = null;
-                status.setText("No MiniAriño X server process is currently tracked.");
-                return;
+            linuxDesktopProcess = null;
+            if (xServerProcess != null && isAlive(xServerProcess)) {
+                xServerProcess.destroy();
+                hadTrackedProcess = true;
             }
-            xServerProcess.destroy();
             xServerProcess = null;
         }
-        status.setText("Sent a stop signal to the X server process started by MiniAriño.");
+        status.setText(hadTrackedProcess
+                ? "Sent stop signals to the MiniAriño XFCE/PRoot session and embedded X server."
+                : "No MiniAriño X server or XFCE session process is currently tracked.");
     }
 
     private boolean isWorkspacePath(File file) {

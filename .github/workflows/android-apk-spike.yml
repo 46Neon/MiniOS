@@ -1,4 +1,4 @@
-name: Standalone APK X11 integration spike
+name: Standalone APK XFCE session integration spike
 
 on:
   workflow_dispatch:
@@ -35,6 +35,9 @@ jobs:
       - name: Install Android build components
         run: sdkmanager --install 'platforms;android-34' 'build-tools;34.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
 
+      - name: Verify XFCE packages in Debian Bookworm ARM64 and session startup contract
+        run: python3 android/scripts/test_debian_xfce_contract.py
+
       - name: Apply pinned upstream DSL compatibility patch
         run: python3 android/scripts/prepare_x11.py
 
@@ -58,6 +61,7 @@ jobs:
           unzip -Z1 "$apk" | grep -Fx 'assets/proot/lib/libtalloc.so.2'
           unzip -Z1 "$apk" | grep -Fx 'assets/proot/lib/libandroid-shmem.so'
           unzip -Z1 "$apk" | grep -Fx 'assets/proot-licenses/GPL-2.0-only.txt'
+          unzip -Z1 "$apk" | grep -Fx 'assets/linux/xfce-session.sh'
           apk_sha256="$(sha256sum "$apk" | cut -d ' ' -f 1)"
           echo "APK_SHA256=$apk_sha256" >> "$GITHUB_ENV"
           echo "APK_SHA256=$apk_sha256"
@@ -65,7 +69,7 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: miniarino-embedded-x11-debug-${{ github.sha }}
+          name: miniarino-xfce-session-debug-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14

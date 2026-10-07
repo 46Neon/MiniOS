@@ -39,6 +39,8 @@ final class LinuxRuntime {
     private static final String OCI_MANIFEST_URL = "https://registry-1.docker.io/v2/library/debian/manifests/" + OCI_MANIFEST_DIGEST;
     private static final String ROOTFS_BLOB_URL = "https://registry-1.docker.io/v2/library/debian/blobs/sha256:" + ROOTFS_LAYER_SHA256;
     private static final String ROOT_MARKER = ".miniarino-debian-arm64-ready";
+    static final String DESKTOP_READY_MARKER = "MINIARINO_XFCE_SESSION_READY";
+    private static final long DESKTOP_START_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(15);
     private static final int CONNECT_TIMEOUT_MS = 20000;
     private static final int READ_TIMEOUT_MS = 45000;
 
@@ -290,14 +292,18 @@ final class LinuxRuntime {
         } catch (IOException ignored) { }
     }
 
-    Process startXMessage(File logFile) throws IOException {
+    Process startXfceDesktop(File logFile) throws IOException {
         if (!isReady()) throw new IOException("Debian ARM64 is not installed");
         writeGuestDns();
+        File script = new File(base, "xfce-session.sh");
+        copyAsset("linux/xfce-session.sh", script);
         String proot = new File(binDir, "proot").getAbsolutePath();
         String temp = tmpDir.getAbsolutePath();
         ProcessBuilder builder = new ProcessBuilder(proot, "--link2symlink", "-0", "-r", rootfs.getAbsolutePath(),
-                "-b", "/dev", "-b", "/proc", "-b", "/sys", "-b", temp + ":/tmp", "-b", new File(base, "android-resolv.conf").getAbsolutePath() + ":/etc/resolv.conf", "-w", "/root",
-                "/bin/sh", "-c", "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends x11-utils && exec xmessage -center 'MiniAriño Debian ARM64 X11 test client'");
+                "-b", "/dev", "-b", "/proc", "-b", "/sys", "-b", temp + ":/tmp",
+                "-b", script.getAbsolutePath() + ":/tmp/miniarino-xfce-session.sh",
+                "-b", new File(base, "android-resolv.conf").getAbsolutePath() + ":/etc/resolv.conf",
+                "-w", "/root", "/bin/sh", "/tmp/miniarino-xfce-session.sh");
         builder.environment().put("LD_LIBRARY_PATH", libDir.getAbsolutePath());
         builder.environment().put("PROOT_LOADER", new File(loaderDir, "loader").getAbsolutePath());
         builder.environment().put("PROOT_TMP_DIR", new File(tmpDir, "proot").getAbsolutePath());
@@ -305,10 +311,55 @@ final class LinuxRuntime {
         builder.environment().put("TMPDIR", temp);
         builder.environment().put("DISPLAY", ":0");
         builder.environment().put("HOME", "/root");
-        builder.environment().put("LANG", "C");
+        builder.environment().put("LANG", "C.UTF-8");
+        builder.environment().put("XDG_RUNTIME_DIR", "/tmp/xdg-runtime");
+        builder.environment().put("XDG_SESSION_TYPE", "x11");
+        builder.environment().put("XDG_CURRENT_DESKTOP", "XFCE");
+        builder.environment().put("DESKTOP_SESSION", "xfce");
         builder.redirectErrorStream(true);
         builder.redirectOutput(logFile);
         return builder.start();
+    }
+
+    void awaitXfceSession(Process process, File logFile) throws Exception {
+        long deadline = System.currentTimeMillis() + DESKTOP_START_TIMEOUT_MS;
+        try (java.io.RandomAccessFile log = new java.io.RandomAccessFile(logFile, "r")) {
+            long position = 0;
+            while (System.currentTimeMillis() < deadline) {
+                log.seek(position);
+                String line;
+                while ((line = log.readLine()) != null) {
+                    position = log.getFilePointer();
+                    if (DESKTOP_READY_MARKER.equals(line.trim())) return;
+                }
+                try {
+                    int exit = process.exitValue();
+                    throw new IOException("XFCE session exited before readiness (code " + exit + "). " + recentLog(logFile));
+                } catch (IllegalThreadStateException stillRunning) {
+                    // Wait for the session manager to register on its private D-Bus before reporting success.
+                }
+                Thread.sleep(500L);
+            }
+        }
+        throw new IOException("Timed out waiting for XFCE session startup. " + recentLog(logFile));
+    }
+
+    private static String recentLog(File file) {
+        if (!file.isFile()) return "No desktop log was produced.";
+        try (java.io.RandomAccessFile input = new java.io.RandomAccessFile(file, "r")) {
+            long start = Math.max(0L, input.length() - 2048L);
+            input.seek(start);
+            byte[] bytes = new byte[(int) (input.length() - start)];
+            input.readFully(bytes);
+            return new String(bytes, StandardCharsets.UTF_8).replace('\n', ' ').trim();
+        } catch (IOException ignored) { return "Could not read the desktop log."; }
+    }
+
+    private void copyAsset(String asset, File target) throws IOException {
+        ensureDir(target.getParentFile());
+        try (InputStream in = context.getAssets().open(asset); FileOutputStream out = new FileOutputStream(target)) {
+            copy(in, out, null);
+        }
     }
 
     interface Progress { void update(String message); }
