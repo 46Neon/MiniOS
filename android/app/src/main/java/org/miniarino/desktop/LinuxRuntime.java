@@ -54,6 +54,7 @@ final class LinuxRuntime {
     private final File libDir;
     private final File loaderDir;
     private final File tmpDir;
+    private final File prootTmpDir;
 
     LinuxRuntime(Context context) {
         this.context = context.getApplicationContext();
@@ -65,6 +66,7 @@ final class LinuxRuntime {
         // Keep Lorie's socket at the Debian guest's real /tmp path. Lorie derives
         // font paths from dirname(TMPDIR), so the parent must be the guest root.
         this.tmpDir = new File(rootfs, "tmp");
+        this.prootTmpDir = new File(context.getFilesDir(), "tmp/proot");
     }
 
     boolean isReady() {
@@ -73,7 +75,7 @@ final class LinuxRuntime {
 
     /** Downloads, verifies, and installs the pinned official Debian bookworm-slim ARM64 layer. */
     void provision(Progress progress) throws Exception {
-        ensureDir(base); ensureDir(binDir); ensureDir(libDir); ensureDir(loaderDir); ensureDir(tmpDir); ensureDir(new File(tmpDir, "proot"));
+        ensureDir(base); ensureDir(binDir); ensureDir(libDir); ensureDir(loaderDir); ensureDir(prootTmpDir);
         installBundledRuntime();
         if (new File(rootfs, ROOT_MARKER).isFile()) { ensureDisplayTemp(); return; }
         File archive = new File(base, "debian-arm64-rootfs.tar.gz");
@@ -377,18 +379,17 @@ final class LinuxRuntime {
         File script = new File(base, "xfce-session.sh");
         copyAsset("linux/xfce-session.sh", script);
         String proot = new File(binDir, "proot").getAbsolutePath();
-        String temp = tmpDir.getAbsolutePath();
         ProcessBuilder builder = new ProcessBuilder(proot, "--link2symlink", "-0", "-r", rootfs.getAbsolutePath(),
-                "-b", "/dev", "-b", "/proc", "-b", "/sys", "-b", temp + ":/tmp",
+                "-b", "/dev", "-b", "/proc", "-b", "/sys",
                 "-b", script.getAbsolutePath() + ":/tmp/miniarino-xfce-session.sh",
                 "-b", new File(base, "android-resolv.conf").getAbsolutePath() + ":/etc/resolv.conf",
                 "-w", "/root", "/bin/sh", "/tmp/miniarino-xfce-session.sh",
                 prepareOnly ? "--prepare-only" : "--start");
         builder.environment().put("LD_LIBRARY_PATH", libDir.getAbsolutePath());
         builder.environment().put("PROOT_LOADER", new File(loaderDir, "loader").getAbsolutePath());
-        builder.environment().put("PROOT_TMP_DIR", new File(tmpDir, "proot").getAbsolutePath());
+        builder.environment().put("PROOT_TMP_DIR", prootTmpDir.getAbsolutePath());
         builder.environment().put("PROOT_NO_SECCOMP", "1");
-        builder.environment().put("TMPDIR", temp);
+        builder.environment().put("TMPDIR", "/tmp");
         builder.environment().put("DISPLAY", ":0");
         builder.environment().put("HOME", "/root");
         builder.environment().put("LANG", "C.UTF-8");

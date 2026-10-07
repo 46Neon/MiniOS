@@ -55,8 +55,8 @@ def main():
         raise SystemExit("Desktop readiness is not gated on XFCE session-manager registration")
     if "xkb-data" not in session or "MINIARINO_XFCE_PREPARED" not in session:
         raise SystemExit("XKB keyboard data must be installed and verified before starting the embedded X server")
-    if '"DISPLAY", ":0"' not in runtime or 'temp + ":/tmp"' not in runtime:
-        raise SystemExit("PRoot desktop must target Lorie :0 and share the Debian /tmp socket directory")
+    if '"DISPLAY", ":0"' not in runtime or '"TMPDIR", "/tmp"' not in runtime:
+        raise SystemExit("PRoot desktop must target Lorie :0 and use the Debian rootfs /tmp socket directory")
     if 'new File(rootfs, "tmp")' not in runtime or 'new File(rootfs, "usr/share/X11/xkb")' not in runtime:
         raise SystemExit("Lorie must use the Debian rootfs paths for its shared socket and XKB data")
     if 'XKB_CONFIG_ROOT is not set.' not in lorie_native or 'XkbBaseDirectory = getenv("XKB_CONFIG_ROOT")' not in lorie_native:
