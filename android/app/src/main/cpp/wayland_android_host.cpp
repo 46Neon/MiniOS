@@ -54,16 +54,14 @@ static void frame_resource_destroyed(wl_resource *resource) {
 static void region_destroy(wl_client *, wl_resource *resource) { wl_resource_destroy(resource); }
 static void region_add(wl_client *, wl_resource *, int32_t, int32_t, int32_t, int32_t) {}
 static void region_subtract(wl_client *, wl_resource *, int32_t, int32_t, int32_t, int32_t) {}
-static const wl_region_interface region_impl = {region_destroy, region_add, region_subtract};
+static const struct wl_region_interface region_impl = {region_destroy, region_add, region_subtract};
 
 static void surface_destroy(wl_client *, wl_resource *resource) { wl_resource_destroy(resource); }
 static void surface_resource_destroyed(wl_resource *resource) {
     auto *surface = static_cast<SurfaceState *>(wl_resource_get_user_data(resource));
     if (!surface) return;
-    wl_list *item, *next;
-    wl_list_for_each_safe(item, next, &surface->callbacks, link) {
-        FrameCallback *frame;
-        frame = wl_container_of(item, frame, link);
+    FrameCallback *frame, *next;
+    wl_list_for_each_safe(frame, next, &surface->callbacks, link) {
         wl_resource_destroy(frame->resource);
     }
     delete surface;
@@ -150,16 +148,14 @@ static void surface_commit(wl_client *, wl_resource *resource) {
     timespec timestamp{};
     clock_gettime(CLOCK_MONOTONIC, &timestamp);
     const uint32_t now = static_cast<uint32_t>(timestamp.tv_sec * 1000ULL + timestamp.tv_nsec / 1000000ULL);
-    wl_list *item, *next;
-    wl_list_for_each_safe(item, next, &surface->callbacks, link) {
-        FrameCallback *frame;
-        frame = wl_container_of(item, frame, link);
+    FrameCallback *frame, *next;
+    wl_list_for_each_safe(frame, next, &surface->callbacks, link) {
         wl_callback_send_done(frame->resource, now);
         wl_resource_destroy(frame->resource);
     }
 }
 
-static const wl_surface_interface surface_impl = {
+static const struct wl_surface_interface surface_impl = {
     surface_destroy, surface_attach, surface_damage, surface_frame,
     surface_set_region, surface_set_region, surface_commit,
     surface_transform, surface_scale, surface_damage_buffer, surface_offset
@@ -185,7 +181,7 @@ static void compositor_create_region(wl_client *client, wl_resource *, uint32_t 
     if (!region) { wl_client_post_no_memory(client); return; }
     wl_resource_set_implementation(region, &region_impl, nullptr, nullptr);
 }
-static const wl_compositor_interface compositor_impl = {compositor_create_surface, compositor_create_region};
+static const struct wl_compositor_interface compositor_impl = {compositor_create_surface, compositor_create_region};
 
 static void bind_compositor(wl_client *client, void *data, uint32_t version, uint32_t id) {
     auto *host = static_cast<Host *>(data);
