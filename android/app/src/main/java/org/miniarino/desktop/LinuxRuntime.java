@@ -5,6 +5,7 @@ import android.net.ConnectivityManager;
 import android.net.LinkProperties;
 import android.net.Network;
 import android.system.Os;
+import android.util.Base64;
 import android.system.OsConstants;
 
 import org.json.JSONObject;
@@ -126,15 +127,70 @@ final class LinuxRuntime {
             if (code != HttpURLConnection.HTTP_OK) throw new IOException("Pinned Debian OCI manifest returned HTTP " + code);
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             try (InputStream in = connection.getInputStream()) { copyBounded(in, bytes, null, 131072L); }
-            byte[] document = bytes.toByteArray();
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            if (!OCI_MANIFEST_DIGEST.substring("sha256:".length()).equals(hex(digest.digest(document)))) throw new IOException("Debian OCI manifest SHA-256 verification failed");
-            JSONObject manifest = new JSONObject(new String(document, StandardCharsets.UTF_8));
-            org.json.JSONArray layers = manifest.getJSONArray("layers");
-            if (layers.length() != 1 || !ROOTFS_LAYER_SHA256.equals(layers.getJSONObject(0).getString("digest")) || layers.getJSONObject(0).getLong("size") != ROOTFS_LAYER_BYTES) {
-                throw new IOException("Pinned Debian OCI manifest does not contain the expected single ARM64 rootfs layer");
-            }
+            verifyPinnedManifestDocument(bytes.toByteArray());
         } finally { connection.disconnect(); }
+    }
+
+    /** Verifies manifest bytes and every ARM64 rootfs descriptor before any layer download. */
+    static void verifyPinnedManifestDocument(byte[] document) throws Exception {
+        MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+        String manifestDigest = "sha256:" + hex(sha256.digest(document));
+        if (!OCI_MANIFEST_DIGEST.equals(manifestDigest)) {
+            throw new IOException("Debian OCI manifest digest mismatch: expected " + OCI_MANIFEST_DIGEST + ", received " + manifestDigest);
+        }
+        JSONObject manifest = new JSONObject(new String(document, StandardCharsets.UTF_8));
+        verifyManifestContents(manifest);
+    }
+
+    /** Separate content checks make registry drift diagnosable and directly fixture-testable. */
+    static void verifyManifestContents(JSONObject manifest) throws Exception {
+        String manifestType = manifest.optString("mediaType", "<missing>");
+        if (!"application/vnd.oci.image.manifest.v1+json".equals(manifestType)) {
+            throw new IOException("Unexpected Debian manifest mediaType: " + manifestType);
+        }
+
+        JSONObject config = manifest.optJSONObject("config");
+        if (config == null) throw new IOException("Pinned Debian manifest is missing its image config descriptor");
+        String configMediaType = config.optString("mediaType", "<missing>");
+        if (!"application/vnd.oci.image.config.v1+json".equals(configMediaType)) throw new IOException("Unexpected Debian image config mediaType: " + configMediaType);
+        String configDigest = config.optString("digest", "<missing>");
+        long configSize = config.optLong("size", -1L);
+        if (!ROOTFS_CONFIG_SHA256.equals(configDigest) || configSize != 468L) {
+            throw new IOException("Debian image config descriptor mismatch: expected " + ROOTFS_CONFIG_SHA256 + " (468 bytes), received " + configDigest + " (" + configSize + " bytes)");
+        }
+        String encodedConfig = config.optString("data", "");
+        if (encodedConfig.isEmpty()) throw new IOException("Pinned Debian manifest is missing its inline image config");
+        byte[] configBytes;
+        try { configBytes = Base64.decode(encodedConfig, Base64.DEFAULT); }
+        catch (IllegalArgumentException e) { throw new IOException("Pinned Debian image config is not valid Base64", e); }
+        if (configBytes.length != configSize) throw new IOException("Debian image config size mismatch: expected " + configSize + ", received " + configBytes.length);
+        String actualConfigDigest = "sha256:" + hex(MessageDigest.getInstance("SHA-256").digest(configBytes));
+        if (!ROOTFS_CONFIG_SHA256.equals(actualConfigDigest)) throw new IOException("Debian image config SHA-256 mismatch: expected " + ROOTFS_CONFIG_SHA256 + ", received " + actualConfigDigest);
+        JSONObject imageConfig = new JSONObject(new String(configBytes, StandardCharsets.UTF_8));
+        String os = imageConfig.optString("os", "<missing>");
+        String architecture = imageConfig.optString("architecture", "<missing>");
+        String variant = imageConfig.optString("variant", "<missing>");
+        if (!"linux".equals(os) || !"arm64".equals(architecture) || !"v8".equals(variant)) {
+            throw new IOException("Debian image platform mismatch: expected linux/arm64/v8, received " + os + "/" + architecture + "/" + variant);
+        }
+        JSONObject rootfsConfig = imageConfig.optJSONObject("rootfs");
+        org.json.JSONArray diffIds = rootfsConfig == null ? null : rootfsConfig.optJSONArray("diff_ids");
+        if (rootfsConfig == null || !"layers".equals(rootfsConfig.optString("type")) || diffIds == null || diffIds.length() != 1 || !ROOTFS_DIFF_ID.equals(diffIds.optString(0))) {
+            throw new IOException("Debian image config does not describe the pinned single ARM64 rootfs layer (expected diff ID " + ROOTFS_DIFF_ID + ")");
+        }
+
+        org.json.JSONArray layers = manifest.optJSONArray("layers");
+        if (layers == null || layers.length() != 1) {
+            throw new IOException("Pinned Debian ARM64 manifest layer count mismatch: expected 1, received " + (layers == null ? "missing" : layers.length()));
+        }
+        JSONObject layer = layers.optJSONObject(0);
+        if (layer == null) throw new IOException("Pinned Debian ARM64 manifest layer[0] is not an object");
+        String mediaType = layer.optString("mediaType", "<missing>");
+        String digest = layer.optString("digest", "<missing>");
+        long size = layer.optLong("size", -1L);
+        if (!"application/vnd.oci.image.layer.v1.tar+gzip".equals(mediaType) || !ROOTFS_LAYER_SHA256.equals(digest) || size != ROOTFS_LAYER_BYTES) {
+            throw new IOException("Pinned Debian ARM64 layer[0] mismatch: expected application/vnd.oci.image.layer.v1.tar+gzip " + ROOTFS_LAYER_SHA256 + " (" + ROOTFS_LAYER_BYTES + " bytes), received " + mediaType + " " + digest + " (" + size + " bytes)");
+        }
     }
 
     private void downloadAndVerify(File target, String token) throws Exception {

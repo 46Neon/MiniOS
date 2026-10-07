@@ -51,8 +51,10 @@ def main():
         raise SystemExit("Desktop readiness is not gated on XFCE session-manager registration")
     if '"DISPLAY", ":0"' not in runtime or 'temp + ":/tmp"' not in runtime:
         raise SystemExit("PRoot desktop must target Lorie :0 and share its app-private /tmp socket directory")
-    if "awaitXfceSession(process, logFile)" not in activity or "No desktop success was reported" not in activity:
-        raise SystemExit("Android UI must wait for the XFCE readiness marker and report startup failures honestly")
+    if "awaitXfceSession(process, logFile)" not in activity or "You are still on the MiniAriño home screen" not in activity:
+        raise SystemExit("Android UI must wait for XFCE readiness and remain on the home screen after failure")
+    if activity.index("awaitXfceSession(process, logFile)") > activity.index("openReadyDesktopDisplay();", activity.index("awaitXfceSession(process, logFile)")):
+        raise SystemExit("Android UI must not navigate to the display before the XFCE session is ready")
     subprocess.check_call(["sh", "-n", str(SESSION)])
     print("Bookworm ARM64 package availability and XFCE/PRoot startup contract passed.")
     for name in sorted(EXPECTED):

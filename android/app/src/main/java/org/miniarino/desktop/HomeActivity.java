@@ -73,16 +73,12 @@ public final class HomeActivity extends Activity {
         subtitle.setTextColor(0xff526174);
         root.addView(subtitle);
 
-        LinearLayout displayActions = new LinearLayout(this);
-        displayActions.setOrientation(LinearLayout.HORIZONTAL);
-        displayActions.addView(button("Start / open X11", v -> openDisplay()), new LinearLayout.LayoutParams(0, -2, 1));
-        displayActions.addView(button("Stop X server", v -> stopXServer()), new LinearLayout.LayoutParams(0, -2, 1));
-        root.addView(displayActions);
-        root.addView(button("Install XFCE desktop + start session", v -> installAndLaunchXfceDesktop()));
+        root.addView(button("Start MiniAriño desktop", v -> installAndLaunchXfceDesktop()));
+        root.addView(button("Stop desktop", v -> stopXServer()));
         status = new TextView(this);
         status.setText(linuxRuntime.isReady()
-                ? "Debian ARM64 is installed in private app storage. Install XFCE, a terminal and Thunar, then start the desktop session on embedded Lorie :0."
-                : "Embedded Lorie X11 and a private Debian ARM64 root filesystem will be prepared on first use. XFCE, a terminal and Thunar are not installed yet.");
+                ? "Debian ARM64 is ready in MiniAriño private storage. Start the desktop to install or open XFCE."
+                : "MiniAriño prepares its embedded display and private Debian ARM64 desktop on first use.");
         status.setTextSize(13);
         status.setTextColor(0xff526174);
         status.setPadding(0, dp(4), 0, dp(8));
@@ -122,7 +118,7 @@ public final class HomeActivity extends Activity {
         refreshListing();
     }
 
-    private boolean openDisplay() {
+    private boolean startEmbeddedXServer() {
         try {
             File tmp = new File(getFilesDir(), "tmp");
             if (!tmp.exists() && !tmp.mkdirs()) throw new IOException("Unable to prepare X11 temporary directory");
@@ -139,32 +135,44 @@ public final class HomeActivity extends Activity {
                     xServerProcess = pb.start();
                 }
             }
-            Intent display = new Intent();
-            display.setClassName(getPackageName(), "com.termux.x11.MainActivity");
-            display.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            startActivity(display);
-            if (status != null) status.setText("Opening embedded Lorie :0. Desktop readiness will be checked before reporting success.");
+            if (status != null) status.setText("MiniAriño's built-in display server is starting.");
             return true;
         } catch (Exception e) {
-            if (status != null) status.setText("Could not open the embedded X display: " + e.getMessage());
-            Toast.makeText(this, "X11 startup failed; see status above", Toast.LENGTH_LONG).show();
+            if (status != null) status.setText("MiniAriño display server could not start: " + e.getMessage());
+            Toast.makeText(this, "Desktop could not start; you are still in MiniAriño", Toast.LENGTH_LONG).show();
             return false;
+        }
+    }
+
+    private void openReadyDesktopDisplay() {
+        try {
+            Intent display = new Intent();
+            display.setClassName(getPackageName(), "com.termux.x11.MainActivity");
+            display.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            startActivity(display);
+        } catch (Exception e) {
+            if (status != null) status.setText("XFCE is running, but MiniAriño could not open its built-in display: " + e.getMessage());
         }
     }
 
     private void installAndLaunchXfceDesktop() {
         synchronized (HomeActivity.class) {
-            if (desktopSetupInProgress || (linuxDesktopProcess != null && isAlive(linuxDesktopProcess))) {
-                status.setText("XFCE installation or desktop session is already running.");
+            if (desktopSetupInProgress) {
+                status.setText("MiniAriño is preparing the desktop. Please wait.");
+                return;
+            }
+            if (linuxDesktopProcess != null && isAlive(linuxDesktopProcess)) {
+                status.setText("XFCE is ready; opening the MiniAriño desktop display.");
+                openReadyDesktopDisplay();
                 return;
             }
             desktopSetupInProgress = true;
         }
-        if (!openDisplay()) {
+        if (!startEmbeddedXServer()) {
             synchronized (HomeActivity.class) { desktopSetupInProgress = false; }
             return;
         }
-        status.setText("Preparing Debian ARM64 and installing XFCE, xfce4-terminal, Thunar and D-Bus in private app storage. This can take several minutes; no desktop success is reported until the XFCE session manager starts.");
+        status.setText("Preparing the MiniAriño desktop. First start downloads Debian ARM64 and installs XFCE; this can take several minutes. The display opens only after the session is ready.");
         SETUP_EXECUTOR.execute(() -> {
             Process process = null;
             File logFile = new File(getFilesDir(), "xfce-desktop.log");
@@ -179,7 +187,10 @@ public final class HomeActivity extends Activity {
                 mainHandler.post(() -> { if (status != null) status.setText("Installing/verifying XFCE packages and starting the session on Lorie :0. Waiting for the XFCE session manager and desktop applications… log: xfce-desktop.log."); });
                 linuxRuntime.awaitXfceSession(process, logFile);
                 Process running = process;
-                mainHandler.post(() -> { if (status != null && isAlive(running)) status.setText("XFCE desktop session is running on embedded Lorie :0. xfce4-terminal and Thunar were launched. Stop X server ends the session. Log: xfce-desktop.log."); });
+                mainHandler.post(() -> {
+                    if (status != null && isAlive(running)) status.setText("MiniAriño XFCE desktop is ready. The built-in display is opening.");
+                    if (isAlive(running)) openReadyDesktopDisplay();
+                });
                 int exit = process.waitFor();
                 synchronized (HomeActivity.class) { if (linuxDesktopProcess == process) linuxDesktopProcess = null; }
                 mainHandler.post(() -> { if (status != null) status.setText("XFCE desktop session ended (exit code " + exit + "). Start it again with the desktop button; details are in xfce-desktop.log."); });
@@ -188,8 +199,8 @@ public final class HomeActivity extends Activity {
                 synchronized (HomeActivity.class) { if (linuxDesktopProcess == process) linuxDesktopProcess = null; }
                 final String failure = e.getMessage();
                 mainHandler.post(() -> {
-                    if (status != null) status.setText("XFCE desktop did not start: " + failure + " No desktop success was reported; inspect xfce-desktop.log and x11-server.log in app-private storage.");
-                    Toast.makeText(HomeActivity.this, "Desktop startup failed; see status and app-private logs", Toast.LENGTH_LONG).show();
+                    if (status != null) status.setText("MiniAriño desktop did not start: " + failure + " You are still on the MiniAriño home screen; no empty display was opened. Startup details were saved in app-private logs.");
+                    Toast.makeText(HomeActivity.this, "Desktop startup failed; MiniAriño home remains available", Toast.LENGTH_LONG).show();
                 });
             } finally {
                 synchronized (HomeActivity.class) { desktopSetupInProgress = false; }
@@ -217,8 +228,8 @@ public final class HomeActivity extends Activity {
             xServerProcess = null;
         }
         status.setText(hadTrackedProcess
-                ? "Sent stop signals to the MiniAriño XFCE/PRoot session and embedded X server."
-                : "No MiniAriño X server or XFCE session process is currently tracked.");
+                ? "Stopped the MiniAriño XFCE/PRoot session and embedded display server."
+                : "No MiniAriño desktop session is currently running.");
     }
 
     private boolean isWorkspacePath(File file) {

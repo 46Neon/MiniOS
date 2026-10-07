@@ -35,6 +35,9 @@ jobs:
       - name: Install Android build components
         run: sdkmanager --install 'platforms;android-34' 'build-tools;34.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
 
+      - name: Verify pinned Debian ARM64 OCI manifest and first-run failure regressions
+        run: python3 android/scripts/test_pinned_debian_manifest.py
+
       - name: Verify XFCE packages in Debian Bookworm ARM64 and session startup contract
         run: python3 android/scripts/test_debian_xfce_contract.py
 
