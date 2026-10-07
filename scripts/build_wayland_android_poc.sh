@@ -83,7 +83,7 @@ export CFLAGS='-O2 -fPIC'
 export CPPFLAGS=''
 export PKG_CONFIG_PATH="$TARGET_PREFIX/lib/pkgconfig"
 ( cd "$LIBFFI_SRC" && ./configure \
-  --build="$(./config.guess)" \
+  --build="$(sh ./config.guess)" \
   --host=aarch64-linux-android \
   --prefix="$TARGET_PREFIX" \
   --enable-shared --disable-static --disable-docs )
@@ -96,6 +96,12 @@ make -C "$LIBFFI_SRC" install
 # PKG_CONFIG_PATH.
 HOST_TRIPLET="$(gcc -print-multiarch)"
 export PKG_CONFIG_PATH="$TARGET_PREFIX/lib/pkgconfig:$HOST_PREFIX/lib/$HOST_TRIPLET/pkgconfig:$HOST_PREFIX/lib/pkgconfig"
+export PKG_CONFIG_LIBDIR="$TARGET_PREFIX/lib/pkgconfig:$HOST_PREFIX/lib/$HOST_TRIPLET/pkgconfig"
+# Confirm Meson's native build-time generator is visible before entering the
+# Android cross build; this prevents a silent host/target pkg-config mix-up.
+pkg-config --modversion wayland-scanner
+SCANNER="$(pkg-config --variable=wayland_scanner wayland-scanner)"
+[[ -x "$SCANNER" ]] || { echo "Native wayland-scanner not executable: $SCANNER" >&2; exit 1; }
 cat > "$WORK/android-aarch64.ini" <<EOF
 [binaries]
 c = '$CC'
@@ -111,7 +117,7 @@ endian = 'little'
 
 [properties]
 needs_exe_wrapper = true
-pkg_config_libdir = ['$TARGET_PREFIX/lib/pkgconfig']
+pkg_config_libdir = ['$TARGET_PREFIX/lib/pkgconfig', '$HOST_PREFIX/lib/$HOST_TRIPLET/pkgconfig']
 EOF
 meson setup "$WORK/wayland-build" "$WAYLAND_SRC" \
   --cross-file "$WORK/android-aarch64.ini" \
