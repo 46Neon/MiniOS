@@ -124,6 +124,7 @@ public final class HomeActivity extends Activity {
                     pb.environment().put("LD_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir);
                     pb.environment().put("TMPDIR", tmp.getAbsolutePath());
                     pb.redirectErrorStream(true);
+                    pb.redirectOutput(new File(getFilesDir(), "x11-server.log"));
                     xServerProcess = pb.start();
                 }
             }
