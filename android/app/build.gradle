@@ -18,6 +18,15 @@ android {
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
+    // Keep this sideloaded debug prototype separate from the user's existing install.
+    // Debug APKs use a distinct package, so installing them cannot replace the release app
+    // or touch its private Debian/workspace data. Release identity remains unchanged.
+    buildTypes {
+        debug {
+            applicationIdSuffix '.sdk28test'
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17

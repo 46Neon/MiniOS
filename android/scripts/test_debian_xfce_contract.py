@@ -55,8 +55,26 @@ def main():
         raise SystemExit("PRoot desktop must target Lorie :0 and share its app-private /tmp socket directory")
     if '"XKB_CONFIG_ROOT"' not in activity or 'usr/share/X11/xkb' not in activity or 'X0' not in activity:
         raise SystemExit("Lorie must be given Debian's installed XKB data and its X11 socket must be awaited")
-    if "targetSdkVersion 28" not in (ROOT / "app/build.gradle").read_text(encoding="utf-8"):
+    gradle = (ROOT / "app/build.gradle").read_text(encoding="utf-8")
+    if "targetSdkVersion 28" not in gradle:
         raise SystemExit("Writable app-private PRoot execution requires the legacy targetSdkVersion 28")
+    if "applicationIdSuffix '.sdk28test'" not in gradle:
+        raise SystemExit("The debug APK must use the isolated org.miniarino.desktop.sdk28test package")
+    debug_label = (ROOT / "app/src/debug/res/values/strings.xml").read_text(encoding="utf-8")
+    if '<string name="application_name">MiniAriño prueba</string>' not in debug_label:
+        raise SystemExit("The side-by-side debug APK must have a distinct launcher label")
+    app_manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+    if "<provider" in app_manifest or "android:authorities" in app_manifest:
+        raise SystemExit("Review provider authorities before changing the isolated debug package")
+    lorie_manifest = ROOT / "vendor/termux-x11/lorie/src/main/AndroidManifest.xml"
+    if lorie_manifest.exists():
+        lorie_source = lorie_manifest.read_text(encoding="utf-8")
+        if "<provider" in lorie_source or "android:authorities" in lorie_source:
+            raise SystemExit("Review upstream provider authorities before changing the isolated debug package")
+    if 'display.setClassName(getPackageName(), "com.termux.x11.MainActivity")' not in activity:
+        raise SystemExit("The internal X11 activity intent must follow the installed application ID")
+    if "testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'" not in gradle:
+        raise SystemExit("The Android instrumentation runner must remain configured for the debug target")
     test_source = (ROOT / "app/src/androidTest/java/org/miniarino/desktop/LinuxRuntimeExecInstrumentedTest.java").read_text(encoding="utf-8")
     if "appPrivateProotExecutesGuestCommand" not in test_source or "proot-test-x86_64/bin/proot" not in test_source or "MINIARINO_PROOT_GUEST_OK" not in test_source:
         raise SystemExit("The Android instrumentation test must execute PRoot from private storage and run a guest command")

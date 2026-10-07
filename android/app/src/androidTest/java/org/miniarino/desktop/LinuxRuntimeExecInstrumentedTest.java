@@ -34,6 +34,8 @@ public final class LinuxRuntimeExecInstrumentedTest {
     public void appPrivateProotExecutesGuestCommand() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         Context testAssets = InstrumentationRegistry.getInstrumentation().getContext();
+        assertEquals("The isolated debug APK must keep its side-by-side package identity",
+                "org.miniarino.desktop.sdk28test", context.getPackageName());
         assertEquals("Writable app-private exec requires the legacy target SDK", 28,
                 context.getApplicationInfo().targetSdkVersion);
         assertTrue("Test must run on Android Q or later", Build.VERSION.SDK_INT >= 29);

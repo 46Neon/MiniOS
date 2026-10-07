@@ -63,7 +63,8 @@ jobs:
         run: |
           apk='android/app/build/outputs/apk/debug/app-debug.apk'
           test -s "$apk"
-          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$apk" | grep -F "package: name='org.miniarino.desktop'"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$apk" | grep -F "package: name='org.miniarino.desktop.sdk28test'"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$apk" | grep -F "application-label:'MiniAriño prueba'"
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$apk" | grep -F "targetSdkVersion:'28'"
           native_libs="$(unzip -Z1 "$apk" | grep -E '^lib/arm64-v8a/[^/]+\.so$')"
           test -n "$native_libs"
