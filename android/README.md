@@ -72,7 +72,7 @@ El workflow comprueba contratos de paquete/inicio XFCE en Debian Bookworm, prepa
 
 Son comprobaciones reales de instalación de paquete Android, launcher y ruta `execve`/PRoot/comando invitado en emulador, no solo revisión del manifest. El PRoot de prueba es x86_64 y el invitado sintético usa `/system/bin/sh` del emulador; **no** ejecuta el PRoot de producción ARM64 ni un Debian ARM64. Tampoco instala paquetes XFCE, arranca Lorie, comprueba socket o entrada de teclado, abre el escritorio ni prueba SELinux/kernel físico/ciclo de vida. Esas son puertas pendientes en el teléfono objetivo ARM64: instalar APK sideload, confirmar PRoot ARM64 y ejecución del guest Debian, completar APT, confirmar gestor de sesión/terminal/gestor de archivos visibles, verificar entrada y cambio de app, detener/reiniciar y repetir después de pausa o recuperación de proceso. Godot, Chromium y Blender no pertenecen a esta fase.
 
-## Problemas de instalación
+## Problemas de instalacion
 
 Se ha reportado un aviso de Android con el texto «no se instaló la aplicación de Google Play» para una compilación `.sdk28test`. Ese texto por sí solo no identifica la causa; no se debe atribuir sin evidencia a firma, conflicto de paquete, Play Protect u otro motivo. Para diagnosticar, solicitar una captura completa del aviso de instalación (y, si se llega desde otra pantalla, de esa pantalla anterior), modelo de teléfono, versión de Android, nombre/SHA-256 del APK e indicar si la app ya estaba instalada. No desinstalar primero: eso puede borrar rootfs Debian, paquetes, workspace y logs privados.
 

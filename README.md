@@ -8,7 +8,7 @@
 
 La CI publica un artefacto de depuración cuando pasan las cuatro pruebas de emulador. Abre [las ejecuciones del flujo Android APK](https://github.com/46Neon/MiniOS/actions/workflows/android-apk-desktop.yml), elige una ejecución satisfactoria y descarga su artefacto `miniarino-apk-desktop-sdk28test-…`. El paquete de prueba se identifica como `org.miniarino.desktop.sdk28test` y muestra la etiqueta **MiniAriño prueba**. Los artefactos se conservan por tiempo limitado (actualmente 14 días); esta descarga es una compilación de prueba, no un lanzamiento firmado estable.
 
-La APK está concebida para instalarse sin Termux ni Termux:X11. El instalador de Android puede rechazar un APK por razones distintas; no adivinaremos la causa sin ver el mensaje exacto. Si Android muestra «no se instaló la aplicación de Google Play» u otro error, consulta [solución de problemas de instalación](android/README.md#problemas-de-instalación) y comparte una captura completa del aviso, incluida la pantalla anterior si es posible.
+La APK está concebida para instalarse sin Termux ni Termux:X11. El instalador de Android puede rechazar un APK por razones distintas; no adivinaremos la causa sin ver el mensaje exacto. Si Android muestra «no se instaló la aplicación de Google Play» u otro error, consulta [solución de problemas de instalación](android/README.md#problemas-de-instalacion) y comparte una captura completa del aviso, incluida la pantalla anterior si es posible.
 
 ## Desarrollo Android
 
