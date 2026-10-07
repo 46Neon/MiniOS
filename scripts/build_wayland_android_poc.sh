@@ -82,11 +82,11 @@ export CC AR RANLIB STRIP
 export CFLAGS='-O2 -fPIC'
 export CPPFLAGS=''
 export PKG_CONFIG_PATH="$TARGET_PREFIX/lib/pkgconfig"
-"$LIBFFI_SRC/configure" \
-  --build="$("$LIBFFI_SRC/config.guess")" \
+( cd "$LIBFFI_SRC" && ./configure \
+  --build="$(./config.guess)" \
   --host=aarch64-linux-android \
   --prefix="$TARGET_PREFIX" \
-  --enable-shared --disable-static --disable-docs
+  --enable-shared --disable-static --disable-docs )
 make -C "$LIBFFI_SRC" -j"$(nproc)"
 make -C "$LIBFFI_SRC" install
 
