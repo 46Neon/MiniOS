@@ -151,9 +151,13 @@ rm -f "$APP_JNILIBS/libwayland_android_host.so" "$APP_JNILIBS/libwayland-server.
   "$APP_JNILIBS/libwayland-client.so"* "$APP_JNILIBS/libffi.so"* "$APP_JNILIBS/libc++_shared.so"
 cp "$WAYLAND_SRC/COPYING" "$APP_NOTICES/libwayland-COPYING-MIT-Expat.txt"
 cp "$LIBFFI_SRC/LICENSE" "$APP_NOTICES/libffi-LICENSE.txt"
-LIBCXX_LICENSE="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1/LICENSE.TXT"
-LIBCXX_SHARED="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
-[[ -s "$LIBCXX_LICENSE" && -s "$LIBCXX_SHARED" ]] || { echo 'Pinned NDK libc++ runtime/license missing' >&2; exit 1; }
+LIBCXX_SHARED="$(find "$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib" -type f -name libc++_shared.so -print -quit)"
+[[ -s "$LIBCXX_SHARED" ]] || { echo 'Pinned NDK libc++_shared runtime missing from its LLVM sysroot' >&2; find "$NDK" -type f -name libc++_shared.so -print >&2; exit 1; }
+LIBCXX_LICENSE="$WORK/libcxx-LICENSE.TXT"
+curl --fail --location --retry 3 \
+  'https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-21.1.0/libcxx/LICENSE.TXT' \
+  --output "$LIBCXX_LICENSE"
+printf '%s  %s\n' '539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b' "$LIBCXX_LICENSE" | sha256sum --check
 cp "$LIBCXX_LICENSE" "$APP_NOTICES/llvm-libcxx-LICENSE.TXT"
 cp "$LIBCXX_SHARED" "$APP_JNILIBS/libc++_shared.so"
 "$CXX" -std=c++17 -stdlib=libc++ -O2 -fPIC -shared -fvisibility=hidden -Wall -Wextra \
