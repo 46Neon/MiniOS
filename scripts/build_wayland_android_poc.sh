@@ -196,7 +196,7 @@ grep -Fq 'Shared library: [libc.so]' "$WORK/server-dynamic.txt"
   echo "libffi source archive SHA-256: $LIBFFI_SHA256"
   echo "NDK: $NDK_VERSION"
   echo "Android minimum API target: $ANDROID_API"
-  echo 'Validation: libwayland server/client and libffi are ELF64 little-endian AArch64; their Android ident descriptors encode API 26; server links libffi.so.8 and libc.so.'
+  echo 'Validation: libwayland server/client and libffi are ELF64 little-endian AArch64; their Android ident descriptors encode API 26; server links libffi.so and libc.so.'
 } | tee -a "$ARTIFACT/build-metadata.txt"
 find "$ARTIFACT" -type f -print0 | sort -z | xargs -0 sha256sum > "$ARTIFACT/SHA256SUMS"
 cat "$ARTIFACT/SHA256SUMS"
