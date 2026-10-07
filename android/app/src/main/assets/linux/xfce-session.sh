@@ -13,39 +13,20 @@ mkdir -p "$XDG_RUNTIME_DIR" /root/.cache /root/.config
 chmod 700 "$XDG_RUNTIME_DIR"
 
 required_commands="startxfce4 xfce4-session xfce4-terminal thunar dbus-launch dbus-send"
-prepare_only=0
-case "${1:-}" in
-    --prepare-only) prepare_only=1 ;;
-    --start|"") ;;
-    *) echo "Unknown MiniAriño desktop mode: $1" >&2; exit 2 ;;
-esac
-needs_install=0
 for command_name in $required_commands; do
-    if ! command -v "$command_name" >/dev/null 2>&1; then
-        needs_install=1
-        break
-    fi
+    command -v "$command_name" >/dev/null 2>&1 || {
+        echo "Required XFCE command is missing; package installation did not complete: $command_name" >&2
+        exit 20
+    }
 done
-if [ "$needs_install" -eq 1 ] || [ ! -f /root/.miniarino-xfce-packages-ready ] || [ ! -d /usr/share/X11/xkb ]; then
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update
-    apt-get install -y --no-install-recommends xfce4 xfce4-terminal thunar dbus-x11 xkb-data
-    for command_name in $required_commands; do
-        command -v "$command_name" >/dev/null 2>&1 || {
-            echo "Required XFCE command is missing after package installation: $command_name" >&2
-            exit 20
-        }
-    done
-    touch /root/.miniarino-xfce-packages-ready
-fi
-if [ ! -d /usr/share/X11/xkb ]; then
-    echo "Required XKB keyboard data is missing after package installation" >&2
-    exit 26
-fi
-if [ "$prepare_only" -eq 1 ]; then
-    echo MINIARINO_XFCE_PREPARED
-    exit 0
-fi
+[ -f /root/.miniarino-xfce-packages-ready ] || {
+    echo "XFCE package installation readiness marker is missing" >&2
+    exit 21
+}
+[ -d /usr/share/X11/xkb/keycodes ] || {
+    echo "XKB keyboard data is missing from the Debian guest" >&2
+    exit 22
+}
 
 # dbus-launch creates a private session bus; wait for XFCE's session-manager name
 # rather than treating a still-running PRoot process as proof of a working desktop.

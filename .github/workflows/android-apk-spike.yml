@@ -21,6 +21,12 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Enable KVM for the API 35 emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -32,11 +38,8 @@ jobs:
         with:
           packages: platform-tools
 
-      - name: Install Android build components
-        run: sdkmanager --install 'platforms;android-34' 'build-tools;34.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
-
-      - name: Verify pinned Debian ARM64 OCI manifest and first-run failure regressions
-        run: python3 android/scripts/test_pinned_debian_manifest.py
+      - name: Install Android build and emulator components
+        run: sdkmanager --install 'platforms;android-34' 'build-tools;34.0.0' 'platforms;android-35' 'build-tools;35.0.0' 'emulator' 'system-images;android-35;google_apis;x86_64' 'ndk;29.0.14206865' 'cmake;3.22.1'
 
       - name: Verify XFCE packages in Debian Bookworm ARM64 and session startup contract
         run: python3 android/scripts/test_debian_xfce_contract.py
@@ -47,6 +50,12 @@ jobs:
       - name: Verify and stage pinned ARM64 PRoot runtime
         run: python3 android/scripts/fetch_proot_runtime.py android/app/src/main/assets/proot
 
+      - name: Stage x86_64 PRoot fixture for Android emulator runtime test
+        run: |
+          python3 android/scripts/fetch_proot_runtime.py --arch x86_64 android/test-assets/proot-test-x86_64
+          mkdir -p android/test-assets/proot-test-x86_64/licenses
+          cp android/app/src/main/assets/proot-licenses/* android/test-assets/proot-test-x86_64/licenses/
+
       - name: Build the single-package ARM64 debug APK
         run: android/vendor/termux-x11/gradlew -p android --no-daemon :app:assembleDebug
 
@@ -55,6 +64,7 @@ jobs:
           apk='android/app/build/outputs/apk/debug/app-debug.apk'
           test -s "$apk"
           "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$apk" | grep -F "package: name='org.miniarino.desktop'"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$apk" | grep -F "targetSdkVersion:'28'"
           native_libs="$(unzip -Z1 "$apk" | grep -E '^lib/arm64-v8a/[^/]+\.so$')"
           test -n "$native_libs"
           echo "Verified ARM64 native libraries:"
@@ -69,10 +79,21 @@ jobs:
           echo "APK_SHA256=$apk_sha256" >> "$GITHUB_ENV"
           echo "APK_SHA256=$apk_sha256"
 
-      - name: Upload debug APK
+      - name: Exercise app-private PRoot and minimal guest on Android 15 x86_64
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -camera-back none -memory 4096
+          disable-animations: true
+          script: android/vendor/termux-x11/gradlew -p android --no-daemon :app:connectedDebugAndroidTest
+
+      - name: Upload runtime-tested ARM64 APK
         uses: actions/upload-artifact@v4
         with:
-          name: miniarino-xfce-session-debug-${{ github.sha }}
+          name: miniarino-xfce-runtime-tested-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14

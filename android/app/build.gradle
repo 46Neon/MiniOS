@@ -8,17 +8,30 @@ android {
     defaultConfig {
         applicationId 'org.miniarino.desktop'
         minSdkVersion 24
-        targetSdkVersion 34
-        versionCode 2
-        versionName '0.2.0-xfce-spike'
+        // Android blocks execve() from an app's writable private data directory when
+        // targetSdkVersion >= 29. The standalone Linux runtime is intentionally stored
+        // under getFilesDir(), so this app must retain the last supported legacy target.
+        // This is a sideloaded prototype; it is not Play Store target-SDK compliant.
+        targetSdkVersion 28
+        versionCode 3
+        versionName '0.3.0-xfce-exec-fix'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    sourceSets {
+        androidTest {
+            assets.srcDirs += [file('../test-assets')]
+        }
+    }
 }
 
 dependencies {
     implementation project(':lorie')
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
 }

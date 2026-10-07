@@ -5,7 +5,6 @@ import android.net.ConnectivityManager;
 import android.net.LinkProperties;
 import android.net.Network;
 import android.system.Os;
-import android.util.Base64;
 import android.system.OsConstants;
 
 import org.json.JSONObject;
@@ -36,8 +35,6 @@ final class LinuxRuntime {
     static final String OCI_MANIFEST_DIGEST = "sha256:a1b86db52ce3daef089e45aabe36dfec4091f82464c25c1fdcf03de197cbe82a";
     static final String ROOTFS_LAYER_SHA256 = "c75f989a229d12b2d2613a5997de9ff3546f664c22da9248720033a2410220f6";
     static final long ROOTFS_LAYER_BYTES = 28137179L;
-    private static final String ROOTFS_CONFIG_SHA256 = "sha256:2a64693fa3d2d9c0fd20e6e74c9001aa672a1c081fce5178d104ef160231c409";
-    private static final String ROOTFS_DIFF_ID = "sha256:dca69811453d69d10b6c0345a5c49147162abe20a2f77802d66efc60667949ea";
     private static final String DOCKER_TOKEN_URL = "https://auth.docker.io/token?service=registry.docker.io&scope=repository%3Alibrary%2Fdebian%3Apull";
     private static final String OCI_MANIFEST_URL = "https://registry-1.docker.io/v2/library/debian/manifests/" + OCI_MANIFEST_DIGEST;
     private static final String ROOTFS_BLOB_URL = "https://registry-1.docker.io/v2/library/debian/blobs/sha256:" + ROOTFS_LAYER_SHA256;
@@ -54,7 +51,6 @@ final class LinuxRuntime {
     private final File libDir;
     private final File loaderDir;
     private final File tmpDir;
-    private final File prootTmpDir;
 
     LinuxRuntime(Context context) {
         this.context = context.getApplicationContext();
@@ -63,21 +59,49 @@ final class LinuxRuntime {
         this.binDir = new File(base, "usr/bin");
         this.libDir = new File(base, "usr/lib");
         this.loaderDir = new File(base, "usr/libexec/proot");
-        // Keep Lorie's socket at the Debian guest's real /tmp path. Lorie derives
-        // font paths from dirname(TMPDIR), so the parent must be the guest root.
-        this.tmpDir = new File(rootfs, "tmp");
-        this.prootTmpDir = new File(context.getFilesDir(), "tmp/proot");
+        // Lorie is started with this same app-private TMPDIR so its Unix X socket is visible in Debian /tmp.
+        this.tmpDir = new File(context.getFilesDir(), "tmp");
     }
 
     boolean isReady() {
         return new File(rootfs, ROOT_MARKER).isFile() && new File(binDir, "proot").canExecute();
     }
 
+    /** Executes a real guest ELF through the packaged PRoot, not just the host --version path. */
+    String runProotGuestSmokeTest() throws Exception {
+        if (!isReady()) throw new IOException("Debian ARM64 root filesystem is not installed");
+        File log = new File(base, "proot-smoke-test.log");
+        Process process = guestProcessBuilder(log, "/bin/sh", "-c", "printf MINIARINO_PROOT_GUEST_OK").start();
+        awaitProcess(process, log, TimeUnit.SECONDS.toMillis(60), "PRoot Debian guest smoke test");
+        String output = readTail(log, 4096).trim();
+        if (!output.equals("MINIARINO_PROOT_GUEST_OK")) {
+            throw new IOException("PRoot started but Debian guest /bin/sh returned unexpected output: " + output);
+        }
+        return output;
+    }
+
+    /** Installs XFCE before Lorie starts, so its XKB_CONFIG_ROOT points at real guest xkb-data. */
+    void installDesktopPackages(File logFile) throws Exception {
+        if (!isReady()) throw new IOException("Debian ARM64 root filesystem is not installed");
+        File marker = new File(rootfs, "root/.miniarino-xfce-packages-ready");
+        if (marker.isFile() && new File(rootfs, "usr/share/X11/xkb/keycodes").isDirectory()) return;
+        String install = "set -eu; export DEBIAN_FRONTEND=noninteractive; "
+                + "apt-get update; apt-get install -y --no-install-recommends xfce4 xfce4-terminal thunar dbus-x11; "
+                + "for c in startxfce4 xfce4-session xfce4-terminal thunar dbus-launch dbus-send; do command -v \"$c\" >/dev/null 2>&1 || { echo \"Required desktop command missing: $c\" >&2; exit 20; }; done; "
+                + "test -d /usr/share/X11/xkb/keycodes || { echo 'xkb-data files are missing' >&2; exit 21; }; "
+                + "touch /root/.miniarino-xfce-packages-ready";
+        Process process = guestProcessBuilder(logFile, "/bin/sh", "-c", install).start();
+        awaitProcess(process, logFile, DESKTOP_START_TIMEOUT_MS, "XFCE package installation");
+        if (!marker.isFile() || !new File(rootfs, "usr/share/X11/xkb/keycodes").isDirectory()) {
+            throw new IOException("XFCE package installation did not leave its readiness marker and XKB data. " + recentLog(logFile));
+        }
+    }
+
     /** Downloads, verifies, and installs the pinned official Debian bookworm-slim ARM64 layer. */
     void provision(Progress progress) throws Exception {
-        ensureDir(base); ensureDir(binDir); ensureDir(libDir); ensureDir(loaderDir); ensureDir(prootTmpDir);
+        ensureDir(base); ensureDir(binDir); ensureDir(libDir); ensureDir(loaderDir); ensureDir(tmpDir); ensureDir(new File(tmpDir, "proot"));
         installBundledRuntime();
-        if (new File(rootfs, ROOT_MARKER).isFile()) { ensureDisplayTemp(); return; }
+        if (new File(rootfs, ROOT_MARKER).isFile()) return;
         File archive = new File(base, "debian-arm64-rootfs.tar.gz");
         String token = fetchDockerPullToken();
         verifyPinnedManifest(token);
@@ -94,17 +118,7 @@ final class LinuxRuntime {
         }
         deleteTree(rootfs);
         if (!staging.renameTo(rootfs)) throw new IOException("Cannot finalize Debian root filesystem installation");
-        ensureDisplayTemp();
     }
-
-    private void ensureDisplayTemp() throws IOException {
-        ensureDir(tmpDir);
-        if (!tmpDir.setReadable(true, false) || !tmpDir.setWritable(true, false) || !tmpDir.setExecutable(true, false))
-            throw new IOException("Cannot prepare Debian /tmp for the embedded display server");
-    }
-
-    File displayTempDir() { return tmpDir; }
-    File xkbConfigDir() { return new File(rootfs, "usr/share/X11/xkb"); }
 
     private void installBundledRuntime() throws IOException {
         copyAssetIfMissing("proot/bin/proot", new File(binDir, "proot"), true);
@@ -142,71 +156,15 @@ final class LinuxRuntime {
             if (code != HttpURLConnection.HTTP_OK) throw new IOException("Pinned Debian OCI manifest returned HTTP " + code);
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             try (InputStream in = connection.getInputStream()) { copyBounded(in, bytes, null, 131072L); }
-            verifyPinnedManifestDocument(bytes.toByteArray());
+            byte[] document = bytes.toByteArray();
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            if (!OCI_MANIFEST_DIGEST.substring("sha256:".length()).equals(hex(digest.digest(document)))) throw new IOException("Debian OCI manifest SHA-256 verification failed");
+            JSONObject manifest = new JSONObject(new String(document, StandardCharsets.UTF_8));
+            org.json.JSONArray layers = manifest.getJSONArray("layers");
+            if (layers.length() != 1 || !ROOTFS_LAYER_SHA256.equals(layers.getJSONObject(0).getString("digest")) || layers.getJSONObject(0).getLong("size") != ROOTFS_LAYER_BYTES) {
+                throw new IOException("Pinned Debian OCI manifest does not contain the expected single ARM64 rootfs layer");
+            }
         } finally { connection.disconnect(); }
-    }
-
-    /** Verifies manifest bytes and every ARM64 rootfs descriptor before any layer download. */
-    static void verifyPinnedManifestDocument(byte[] document) throws Exception {
-        MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
-        String manifestDigest = "sha256:" + hex(sha256.digest(document));
-        if (!OCI_MANIFEST_DIGEST.equals(manifestDigest)) {
-            throw new IOException("Debian OCI manifest digest mismatch: expected " + OCI_MANIFEST_DIGEST + ", received " + manifestDigest);
-        }
-        JSONObject manifest = new JSONObject(new String(document, StandardCharsets.UTF_8));
-        verifyManifestContents(manifest);
-    }
-
-    /** Separate content checks make registry drift diagnosable and directly fixture-testable. */
-    static void verifyManifestContents(JSONObject manifest) throws Exception {
-        String manifestType = manifest.optString("mediaType", "<missing>");
-        if (!"application/vnd.oci.image.manifest.v1+json".equals(manifestType)) {
-            throw new IOException("Unexpected Debian manifest mediaType: " + manifestType);
-        }
-
-        JSONObject config = manifest.optJSONObject("config");
-        if (config == null) throw new IOException("Pinned Debian manifest is missing its image config descriptor");
-        String configMediaType = config.optString("mediaType", "<missing>");
-        if (!"application/vnd.oci.image.config.v1+json".equals(configMediaType)) throw new IOException("Unexpected Debian image config mediaType: " + configMediaType);
-        String configDigest = config.optString("digest", "<missing>");
-        long configSize = config.optLong("size", -1L);
-        if (!ROOTFS_CONFIG_SHA256.equals(configDigest) || configSize != 468L) {
-            throw new IOException("Debian image config descriptor mismatch: expected " + ROOTFS_CONFIG_SHA256 + " (468 bytes), received " + configDigest + " (" + configSize + " bytes)");
-        }
-        String encodedConfig = config.optString("data", "");
-        if (encodedConfig.isEmpty()) throw new IOException("Pinned Debian manifest is missing its inline image config");
-        byte[] configBytes;
-        try { configBytes = Base64.decode(encodedConfig, Base64.DEFAULT); }
-        catch (IllegalArgumentException e) { throw new IOException("Pinned Debian image config is not valid Base64", e); }
-        if (configBytes.length != configSize) throw new IOException("Debian image config size mismatch: expected " + configSize + ", received " + configBytes.length);
-        String actualConfigDigest = "sha256:" + hex(MessageDigest.getInstance("SHA-256").digest(configBytes));
-        if (!ROOTFS_CONFIG_SHA256.equals(actualConfigDigest)) throw new IOException("Debian image config SHA-256 mismatch: expected " + ROOTFS_CONFIG_SHA256 + ", received " + actualConfigDigest);
-        JSONObject imageConfig = new JSONObject(new String(configBytes, StandardCharsets.UTF_8));
-        String os = imageConfig.optString("os", "<missing>");
-        String architecture = imageConfig.optString("architecture", "<missing>");
-        String variant = imageConfig.optString("variant", "<missing>");
-        if (!"linux".equals(os) || !"arm64".equals(architecture) || !"v8".equals(variant)) {
-            throw new IOException("Debian image platform mismatch: expected linux/arm64/v8, received " + os + "/" + architecture + "/" + variant);
-        }
-        JSONObject rootfsConfig = imageConfig.optJSONObject("rootfs");
-        org.json.JSONArray diffIds = rootfsConfig == null ? null : rootfsConfig.optJSONArray("diff_ids");
-        if (rootfsConfig == null || !"layers".equals(rootfsConfig.optString("type")) || diffIds == null || diffIds.length() != 1 || !ROOTFS_DIFF_ID.equals(diffIds.optString(0))) {
-            throw new IOException("Debian image config does not describe the pinned single ARM64 rootfs layer (expected diff ID " + ROOTFS_DIFF_ID + ")");
-        }
-
-        org.json.JSONArray layers = manifest.optJSONArray("layers");
-        if (layers == null || layers.length() != 1) {
-            throw new IOException("Pinned Debian ARM64 manifest layer count mismatch: expected 1, received " + (layers == null ? "missing" : layers.length()));
-        }
-        JSONObject layer = layers.optJSONObject(0);
-        if (layer == null) throw new IOException("Pinned Debian ARM64 manifest layer[0] is not an object");
-        String mediaType = layer.optString("mediaType", "<missing>");
-        String digest = layer.optString("digest", "<missing>");
-        long size = layer.optLong("size", -1L);
-        String expectedLayerDigest = "sha256:" + ROOTFS_LAYER_SHA256;
-        if (!"application/vnd.oci.image.layer.v1.tar+gzip".equals(mediaType) || !expectedLayerDigest.equals(digest) || size != ROOTFS_LAYER_BYTES) {
-            throw new IOException("Pinned Debian ARM64 layer[0] mismatch: expected application/vnd.oci.image.layer.v1.tar+gzip " + expectedLayerDigest + " (" + ROOTFS_LAYER_BYTES + " bytes), received " + mediaType + " " + digest + " (" + size + " bytes)");
-        }
     }
 
     private void downloadAndVerify(File target, String token) throws Exception {
@@ -364,58 +322,73 @@ final class LinuxRuntime {
         } catch (IOException ignored) { }
     }
 
-    Process prepareXfceDesktop(File logFile) throws IOException {
-        return startXfceScript(logFile, true);
-    }
-
     Process startXfceDesktop(File logFile) throws IOException {
-        return startXfceScript(logFile, false);
-    }
-
-    private Process startXfceScript(File logFile, boolean prepareOnly) throws IOException {
         if (!isReady()) throw new IOException("Debian ARM64 is not installed");
+        if (!new File(rootfs, "root/.miniarino-xfce-packages-ready").isFile()) {
+            throw new IOException("XFCE packages have not completed installation");
+        }
         writeGuestDns();
-        ensureDisplayTemp();
         File script = new File(base, "xfce-session.sh");
         copyAsset("linux/xfce-session.sh", script);
-        String proot = new File(binDir, "proot").getAbsolutePath();
-        ProcessBuilder builder = new ProcessBuilder(proot, "--link2symlink", "-0", "-r", rootfs.getAbsolutePath(),
-                "-b", "/dev", "-b", "/proc", "-b", "/sys",
+        return guestProcessBuilder(logFile, "/bin/sh", "/tmp/miniarino-xfce-session.sh").command(
+                new File(binDir, "proot").getAbsolutePath(), "--link2symlink", "-0", "-r", rootfs.getAbsolutePath(),
+                "-b", "/dev", "-b", "/proc", "-b", "/sys", "-b", tmpDir.getAbsolutePath() + ":/tmp",
                 "-b", script.getAbsolutePath() + ":/tmp/miniarino-xfce-session.sh",
                 "-b", new File(base, "android-resolv.conf").getAbsolutePath() + ":/etc/resolv.conf",
-                "-w", "/root", "/bin/sh", "/tmp/miniarino-xfce-session.sh",
-                prepareOnly ? "--prepare-only" : "--start");
+                "-w", "/root", "/bin/sh", "/tmp/miniarino-xfce-session.sh").start();
+    }
+
+    private ProcessBuilder guestProcessBuilder(File logFile, String... guestCommand) {
+        List<String> command = new ArrayList<>();
+        command.add(new File(binDir, "proot").getAbsolutePath());
+        command.add("--link2symlink"); command.add("-0"); command.add("-r"); command.add(rootfs.getAbsolutePath());
+        command.add("-b"); command.add("/dev"); command.add("-b"); command.add("/proc"); command.add("-b"); command.add("/sys");
+        command.add("-b"); command.add(tmpDir.getAbsolutePath() + ":/tmp"); command.add("-w"); command.add("/root");
+        for (String arg : guestCommand) command.add(arg);
+        ProcessBuilder builder = new ProcessBuilder(command);
         builder.environment().put("LD_LIBRARY_PATH", libDir.getAbsolutePath());
         builder.environment().put("PROOT_LOADER", new File(loaderDir, "loader").getAbsolutePath());
-        builder.environment().put("PROOT_TMP_DIR", prootTmpDir.getAbsolutePath());
+        builder.environment().put("PROOT_TMP_DIR", new File(tmpDir, "proot").getAbsolutePath());
         builder.environment().put("PROOT_NO_SECCOMP", "1");
-        builder.environment().put("TMPDIR", "/tmp");
-        builder.environment().put("DISPLAY", ":0");
+        builder.environment().put("TMPDIR", tmpDir.getAbsolutePath());
         builder.environment().put("HOME", "/root");
         builder.environment().put("LANG", "C.UTF-8");
         builder.environment().put("XDG_RUNTIME_DIR", "/tmp/xdg-runtime");
         builder.environment().put("XDG_SESSION_TYPE", "x11");
         builder.environment().put("XDG_CURRENT_DESKTOP", "XFCE");
         builder.environment().put("DESKTOP_SESSION", "xfce");
+        builder.environment().put("DISPLAY", ":0");
         builder.redirectErrorStream(true);
         builder.redirectOutput(logFile);
-        return builder.start();
+        return builder;
     }
 
-    void awaitXfcePreparation(Process process, File logFile) throws Exception {
-        long deadline = System.currentTimeMillis() + DESKTOP_START_TIMEOUT_MS;
-        while (System.currentTimeMillis() < deadline) {
-            try {
-                int exit = process.exitValue();
-                if (exit != 0) throw new IOException("XFCE display support installation failed (code " + exit + "). " + recentLog(logFile));
-                if (!xkbConfigDir().isDirectory()) throw new IOException("Debian did not install the XKB keyboard data required by the embedded display server. " + recentLog(logFile));
-                return;
-            } catch (IllegalThreadStateException running) {
-                Thread.sleep(500L);
-            }
+    private static void awaitProcess(Process process, File logFile, long timeoutMs, String purpose) throws Exception {
+        java.util.concurrent.FutureTask<Integer> exit = new java.util.concurrent.FutureTask<>(process::waitFor);
+        Thread waiter = new Thread(exit, "miniarino-process-wait");
+        waiter.setDaemon(true);
+        waiter.start();
+        int code;
+        try {
+            code = exit.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            process.destroy();
+            throw new IOException(purpose + " timed out. " + recentLog(logFile), e);
+        } catch (java.util.concurrent.ExecutionException e) {
+            throw new IOException(purpose + " could not be observed", e.getCause());
         }
-        process.destroy();
-        throw new IOException("Timed out preparing the XFCE display support. " + recentLog(logFile));
+        if (code != 0) throw new IOException(purpose + " exited with code " + code + ". " + recentLog(logFile));
+    }
+
+    private static String readTail(File file, int maximumBytes) throws IOException {
+        if (!file.isFile()) return "";
+        try (java.io.RandomAccessFile input = new java.io.RandomAccessFile(file, "r")) {
+            long start = Math.max(0L, input.length() - maximumBytes);
+            input.seek(start);
+            byte[] bytes = new byte[(int) (input.length() - start)];
+            input.readFully(bytes);
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
     }
 
     void awaitXfceSession(Process process, File logFile) throws Exception {

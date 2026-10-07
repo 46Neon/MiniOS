@@ -2,9 +2,6 @@ package org.miniarino.desktop;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.ClipData;
-import android.content.ClipboardManager;
-import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -18,11 +15,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Comparator;
 
@@ -37,10 +31,10 @@ public final class HomeActivity extends Activity {
     private static Process xServerProcess;
     private static Process linuxDesktopProcess;
     private static boolean desktopSetupInProgress;
+    private volatile String lastDesktopFailure = "";
     private static final java.util.concurrent.ExecutorService SETUP_EXECUTOR = java.util.concurrent.Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private LinuxRuntime linuxRuntime;
-    private volatile String latestStartupFailure = "No startup failure recorded.";
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -80,17 +74,21 @@ public final class HomeActivity extends Activity {
         subtitle.setTextColor(0xff526174);
         root.addView(subtitle);
 
-        root.addView(button("Start MiniAriño desktop", v -> installAndLaunchXfceDesktop()));
-        root.addView(button("Stop desktop", v -> stopXServer()));
+        root.addView(button("Install XFCE desktop + start session", v -> installAndLaunchXfceDesktop()));
+        LinearLayout diagnosticsActions = new LinearLayout(this);
+        diagnosticsActions.setOrientation(LinearLayout.HORIZONTAL);
+        diagnosticsActions.addView(button("Copy diagnostics", v -> copyDiagnostics()), new LinearLayout.LayoutParams(0, -2, 1));
+        diagnosticsActions.addView(button("Share diagnostics", v -> shareDiagnostics()), new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(diagnosticsActions);
+        root.addView(button("Stop MiniAriño session", v -> stopXServer()));
         status = new TextView(this);
         status.setText(linuxRuntime.isReady()
-                ? "Debian ARM64 is ready in MiniAriño private storage. Start the desktop to install or open XFCE."
-                : "MiniAriño prepares its embedded display and private Debian ARM64 desktop on first use.");
+                ? "Debian ARM64 is installed in MiniAriño. Start the XFCE setup; the embedded display opens only after the desktop is ready."
+                : "MiniAriño will prepare its private Debian ARM64 system and install XFCE on first start. No separate terminal or X11 app is needed.");
         status.setTextSize(13);
         status.setTextColor(0xff526174);
         status.setPadding(0, dp(4), 0, dp(8));
         root.addView(status);
-        root.addView(button("Copy/share diagnostics", v -> showDiagnosticOptions()));
 
         TextView filesTitle = new TextView(this);
         filesTitle.setText("Private folders");
@@ -126,171 +124,103 @@ public final class HomeActivity extends Activity {
         refreshListing();
     }
 
-    private boolean startEmbeddedXServer() {
-        try {
-            File tmp = linuxRuntime.displayTempDir();
-            if (!tmp.exists() && !tmp.mkdirs()) throw new IOException("Could not prepare Debian /tmp for the built-in display");
-            File xkb = linuxRuntime.xkbConfigDir();
-            if (!xkb.isDirectory()) throw new IOException("Keyboard/display support is not installed yet. Try starting the desktop again after setup completes.");
-            String apk = getApplicationInfo().sourceDir;
-            synchronized (HomeActivity.class) {
-                if (xServerProcess == null || !isAlive(xServerProcess)) {
-                    File serverLog = new File(getFilesDir(), "x11-server.log");
-                    ProcessBuilder pb = new ProcessBuilder("/system/bin/app_process", "/", "--nice-name=miniarino-x11",
-                            "com.termux.x11.CmdEntryPoint", ":0");
-                    pb.environment().put("CLASSPATH", apk);
-                    pb.environment().put("LD_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir);
-                    pb.environment().put("TMPDIR", tmp.getAbsolutePath());
-                    pb.environment().put("XKB_CONFIG_ROOT", xkb.getAbsolutePath());
-                    pb.redirectErrorStream(true);
-                    pb.redirectOutput(serverLog);
-                    xServerProcess = pb.start();
-                }
-            }
-            mainHandler.post(() -> { if (status != null) status.setText("MiniAriño's built-in display server is starting."); });
-            return true;
-        } catch (Exception e) {
-            latestStartupFailure = "The built-in display server could not start: " + safeMessage(e);
-            mainHandler.post(() -> {
-                if (status != null) status.setText(conciseMessage(latestStartupFailure) + " You are still on the MiniAriño home screen. Use Copy/share diagnostics for details.");
-                Toast.makeText(HomeActivity.this, "Desktop startup failed; MiniAriño home remains available", Toast.LENGTH_LONG).show();
-            });
-            return false;
+    private void startEmbeddedXServer() throws IOException {
+        File tmp = new File(getFilesDir(), "tmp");
+        if (!tmp.exists() && !tmp.mkdirs()) throw new IOException("MiniAriño could not prepare its private display directory");
+        File xkbRoot = new File(getFilesDir(), "linux/debian-arm64/usr/share/X11/xkb");
+        if (!new File(xkbRoot, "keycodes").isDirectory()) throw new IOException("Debian keyboard data is not installed; MiniAriño could not configure the embedded display");
+        File socket = new File(tmp, ".X11-unix/X0");
+        synchronized (HomeActivity.class) {
+            if (xServerProcess != null && isAlive(xServerProcess)) return;
+            if (socket.exists() && !socket.delete()) throw new IOException("MiniAriño could not clear a stale X11 socket");
+            ProcessBuilder pb = new ProcessBuilder("/system/bin/app_process", "/", "--nice-name=miniarino-x11",
+                    "com.termux.x11.CmdEntryPoint", ":0");
+            pb.environment().put("CLASSPATH", getApplicationInfo().sourceDir);
+            pb.environment().put("LD_LIBRARY_PATH", getApplicationInfo().nativeLibraryDir);
+            pb.environment().put("TMPDIR", tmp.getAbsolutePath());
+            pb.environment().put("XKB_CONFIG_ROOT", xkbRoot.getAbsolutePath());
+            pb.redirectErrorStream(true);
+            pb.redirectOutput(new File(getFilesDir(), "x11-server.log"));
+            xServerProcess = pb.start();
         }
     }
 
-    private void openReadyDesktopDisplay() {
-        try {
+    private void awaitEmbeddedXServer() throws Exception {
+        File socket = new File(getFilesDir(), "tmp/.X11-unix/X0");
+        File log = new File(getFilesDir(), "x11-server.log");
+        long deadline = System.currentTimeMillis() + 30000L;
+        while (System.currentTimeMillis() < deadline) {
+            synchronized (HomeActivity.class) {
+                if (xServerProcess == null || !isAlive(xServerProcess)) {
+                    throw new IOException("Embedded display server exited before opening :0. " + tail(log));
+                }
+            }
+            if (socket.exists()) return;
+            Thread.sleep(250L);
+        }
+        throw new IOException("Embedded display server did not create its :0 socket. " + tail(log));
+    }
+
+    private void showEmbeddedDesktop() throws Exception {
+        java.util.concurrent.FutureTask<Void> task = new java.util.concurrent.FutureTask<>(() -> {
             Intent display = new Intent();
             display.setClassName(getPackageName(), "com.termux.x11.MainActivity");
-            display.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            display.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             startActivity(display);
-        } catch (Exception e) {
-            if (status != null) status.setText("XFCE is running, but MiniAriño could not open its built-in display: " + e.getMessage());
-        }
+            return null;
+        });
+        mainHandler.post(task);
+        task.get(15, java.util.concurrent.TimeUnit.SECONDS);
     }
 
     private void installAndLaunchXfceDesktop() {
         synchronized (HomeActivity.class) {
-            if (desktopSetupInProgress) {
-                status.setText("MiniAriño is preparing the desktop. Please wait.");
-                return;
-            }
-            if (linuxDesktopProcess != null && isAlive(linuxDesktopProcess)) {
-                status.setText("XFCE is ready; opening the MiniAriño desktop display.");
-                openReadyDesktopDisplay();
+            if (desktopSetupInProgress || (linuxDesktopProcess != null && isAlive(linuxDesktopProcess))) {
+                status.setText("XFCE installation or desktop session is already running.");
                 return;
             }
             desktopSetupInProgress = true;
         }
-        status.setText("Preparing MiniAriño's private Debian desktop and display support. First start downloads Debian ARM64 and installs XFCE; this can take several minutes. The desktop display opens only after the session is ready.");
+        lastDesktopFailure = "";
+        status.setText("Preparing MiniAriño's private Debian system and installing XFCE. The embedded display will open only after XFCE is ready.");
         SETUP_EXECUTOR.execute(() -> {
             Process process = null;
+            File installLog = new File(getFilesDir(), "xfce-install.log");
             File logFile = new File(getFilesDir(), "xfce-desktop.log");
             try {
                 linuxRuntime.provision(message -> mainHandler.post(() -> { if (status != null) status.setText(message); }));
-                mainHandler.post(() -> { if (status != null) status.setText("Installing XFCE and keyboard data needed by MiniAriño's built-in display…"); });
-                File preparationLog = new File(getFilesDir(), "xfce-prepare.log");
-                Process preparation = linuxRuntime.prepareXfceDesktop(preparationLog);
-                linuxRuntime.awaitXfcePreparation(preparation, preparationLog);
-                if (!startEmbeddedXServer()) throw new IOException(latestStartupFailure);
-                Thread.sleep(2500L);
-                synchronized (HomeActivity.class) {
-                    if (xServerProcess == null || !isAlive(xServerProcess)) {
-                        int exit = xServerProcess == null ? -1 : exitCode(xServerProcess);
-                        throw new IOException("MiniAriño's built-in display server exited during startup (code " + exit + "). " + tail(new File(getFilesDir(), "x11-server.log"), 3072));
-                    }
-                }
+                mainHandler.post(() -> { if (status != null) status.setText("Installing XFCE and keyboard support in MiniAriño. This may take several minutes…"); });
+                linuxRuntime.installDesktopPackages(installLog);
+                startEmbeddedXServer();
+                mainHandler.post(() -> { if (status != null) status.setText("Starting MiniAriño's embedded display server and verifying its keyboard configuration…"); });
+                awaitEmbeddedXServer();
                 process = linuxRuntime.startXfceDesktop(logFile);
                 synchronized (HomeActivity.class) { linuxDesktopProcess = process; }
-                mainHandler.post(() -> { if (status != null) status.setText("Installing/verifying XFCE packages and starting the session on Lorie :0. Waiting for the XFCE session manager and desktop applications… log: xfce-desktop.log."); });
+                mainHandler.post(() -> { if (status != null) status.setText("Starting XFCE on the embedded display. MiniAriño will open it after the session manager, terminal and file manager are ready…"); });
                 linuxRuntime.awaitXfceSession(process, logFile);
+                showEmbeddedDesktop();
                 Process running = process;
-                mainHandler.post(() -> {
-                    if (status != null && isAlive(running)) status.setText("MiniAriño XFCE desktop is ready. The built-in display is opening.");
-                    if (isAlive(running)) openReadyDesktopDisplay();
-                });
+                mainHandler.post(() -> { if (status != null && isAlive(running)) status.setText("MiniAriño XFCE is ready on its embedded display. The session includes a terminal and file manager."); });
                 int exit = process.waitFor();
                 synchronized (HomeActivity.class) { if (linuxDesktopProcess == process) linuxDesktopProcess = null; }
-                mainHandler.post(() -> { if (status != null) status.setText("XFCE desktop session ended (exit code " + exit + "). Start it again with the desktop button; details are in xfce-desktop.log."); });
+                mainHandler.post(() -> { if (status != null) status.setText("MiniAriño desktop session ended (exit code " + exit + "). Tap the desktop button to start it again."); });
             } catch (Exception e) {
                 if (process != null && isAlive(process)) process.destroy();
-                synchronized (HomeActivity.class) { if (linuxDesktopProcess == process) linuxDesktopProcess = null; }
-                final String failure = safeMessage(e);
-                latestStartupFailure = failure;
+                synchronized (HomeActivity.class) {
+                    if (linuxDesktopProcess == process) linuxDesktopProcess = null;
+                    if (xServerProcess != null && isAlive(xServerProcess)) xServerProcess.destroy();
+                    xServerProcess = null;
+                }
+                final String failure = conciseFailure(e);
+                lastDesktopFailure = failure;
                 mainHandler.post(() -> {
-                    if (status != null) status.setText("MiniAriño desktop did not start: " + conciseMessage(failure) + " You are still on the MiniAriño home screen. Tap Copy/share diagnostics for details.");
-                    Toast.makeText(HomeActivity.this, "Desktop startup failed; MiniAriño home remains available", Toast.LENGTH_LONG).show();
+                    if (status != null) status.setText("MiniAriño desktop did not start: " + failure + ". Copy or share diagnostics for help.");
+                    Toast.makeText(HomeActivity.this, "MiniAriño could not start the desktop", Toast.LENGTH_LONG).show();
                 });
             } finally {
                 synchronized (HomeActivity.class) { desktopSetupInProgress = false; }
             }
         });
-    }
-
-    private void showDiagnosticOptions() {
-        new AlertDialog.Builder(this)
-                .setTitle("MiniAriño startup diagnostics")
-                .setMessage("Choose how to send the current startup details. The logs stay inside MiniAriño unless you choose to share them.")
-                .setNegativeButton("Cancel", null)
-                .setNeutralButton("Share", (dialog, which) -> shareDiagnostics())
-                .setPositiveButton("Copy", (dialog, which) -> copyDiagnostics())
-                .show();
-    }
-
-    private String diagnosticText() {
-        StringBuilder text = new StringBuilder();
-        text.append("MiniAriño desktop diagnostics\nFailure: ").append(latestStartupFailure).append("\n");
-        text.append("Android SDK: ").append(android.os.Build.VERSION.SDK_INT).append("\n");
-        text.append("ABI: ").append(android.os.Build.SUPPORTED_ABIS.length == 0 ? "unknown" : android.os.Build.SUPPORTED_ABIS[0]).append("\n");
-        appendLog(text, "X server", new File(getFilesDir(), "x11-server.log"));
-        appendLog(text, "XFCE preparation", new File(getFilesDir(), "xfce-prepare.log"));
-        appendLog(text, "XFCE session", new File(getFilesDir(), "xfce-desktop.log"));
-        return text.toString();
-    }
-
-    private static void appendLog(StringBuilder target, String label, File file) {
-        target.append("\n--- ").append(label).append(" ---\n");
-        target.append(file.isFile() ? tail(file, 4096) : "No log file was created.").append("\n");
-    }
-
-    private static String tail(File file, int maximumBytes) {
-        try (FileInputStream in = new FileInputStream(file)) {
-            long skip = Math.max(0L, file.length() - maximumBytes);
-            while (skip > 0) { long n = in.skip(skip); if (n <= 0) break; skip -= n; }
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            byte[] buffer = new byte[1024]; int count;
-            while ((count = in.read(buffer)) >= 0) out.write(buffer, 0, count);
-            return new String(out.toByteArray(), StandardCharsets.UTF_8).trim();
-        } catch (IOException e) { return "Could not read this log: " + safeMessage(e); }
-    }
-
-    private void copyDiagnostics() {
-        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText("MiniAriño diagnostics", diagnosticText()));
-        Toast.makeText(this, "Diagnostics copied", Toast.LENGTH_SHORT).show();
-    }
-
-    private void shareDiagnostics() {
-        Intent send = new Intent(Intent.ACTION_SEND);
-        send.setType("text/plain");
-        send.putExtra(Intent.EXTRA_SUBJECT, "MiniAriño desktop startup diagnostics");
-        send.putExtra(Intent.EXTRA_TEXT, diagnosticText());
-        startActivity(Intent.createChooser(send, "Share MiniAriño diagnostics"));
-    }
-
-    private static String safeMessage(Exception exception) {
-        String message = exception.getMessage();
-        return message == null || message.trim().isEmpty() ? exception.getClass().getSimpleName() : message;
-    }
-
-    private static String conciseMessage(String message) {
-        String concise = message == null ? "Desktop startup failed." : message.replaceAll("\\s+", " ").trim();
-        return concise.length() > 180 ? concise.substring(0, 177) + "…" : concise;
-    }
-
-    private static int exitCode(Process process) {
-        try { return process.exitValue(); } catch (IllegalThreadStateException running) { return -1; }
     }
 
     private static boolean isAlive(Process process) {
@@ -313,8 +243,71 @@ public final class HomeActivity extends Activity {
             xServerProcess = null;
         }
         status.setText(hadTrackedProcess
-                ? "Stopped the MiniAriño XFCE/PRoot session and embedded display server."
-                : "No MiniAriño desktop session is currently running.");
+                ? "Sent stop signals to the MiniAriño XFCE/PRoot session and embedded X server."
+                : "No MiniAriño X server or XFCE session process is currently tracked.");
+    }
+
+    private static String conciseFailure(Throwable error) {
+        Throwable current = error;
+        while (current.getCause() != null && (current.getMessage() == null || current.getMessage().trim().isEmpty())) current = current.getCause();
+        String message = current.getMessage();
+        if (message == null || message.trim().isEmpty()) message = current.getClass().getSimpleName();
+        message = message.replaceAll("\\s+", " ").trim();
+        return message.length() > 280 ? message.substring(0, 277) + "…" : message;
+    }
+
+    private String collectDiagnostics() {
+        StringBuilder text = new StringBuilder("MiniAriño desktop diagnostics\n");
+        String version = "unknown";
+        try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { }
+        text.append("App version: ").append(version).append('\n');
+        text.append("Android API: ").append(android.os.Build.VERSION.SDK_INT).append("; target SDK: ")
+                .append(getApplicationInfo().targetSdkVersion).append('\n');
+        text.append("ABI: ").append(android.os.Build.SUPPORTED_ABIS.length == 0 ? "unknown" : android.os.Build.SUPPORTED_ABIS[0]).append('\n');
+        text.append("Current status: ").append(status == null ? "not available" : status.getText()).append('\n');
+        if (!lastDesktopFailure.isEmpty()) text.append("Last failure: ").append(lastDesktopFailure).append('\n');
+        appendLogTail(text, "xfce-install.log");
+        appendLogTail(text, "xfce-desktop.log");
+        appendLogTail(text, "x11-server.log");
+        return text.toString();
+    }
+
+    private void appendLogTail(StringBuilder text, String name) {
+        File log = new File(getFilesDir(), name);
+        text.append("\n--- ").append(name).append(" (last 4 KiB) ---\n");
+        if (!log.isFile()) { text.append("(not created)\n"); return; }
+        try (java.io.RandomAccessFile input = new java.io.RandomAccessFile(log, "r")) {
+            long start = Math.max(0L, input.length() - 4096L);
+            input.seek(start);
+            byte[] bytes = new byte[(int) (input.length() - start)];
+            input.readFully(bytes);
+            text.append(new String(bytes, java.nio.charset.StandardCharsets.UTF_8)).append('\n');
+        } catch (IOException e) { text.append("(could not read diagnostic log)\n"); }
+    }
+
+    private String tail(File file) {
+        if (!file.isFile()) return "No display log was produced.";
+        try (java.io.RandomAccessFile input = new java.io.RandomAccessFile(file, "r")) {
+            long start = Math.max(0L, input.length() - 2048L);
+            input.seek(start);
+            byte[] bytes = new byte[(int) (input.length() - start)];
+            input.readFully(bytes);
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8).replace('\n', ' ').trim();
+        } catch (IOException e) { return "Could not read display log."; }
+    }
+
+    private void copyDiagnostics() {
+        android.content.ClipboardManager clipboard = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MiniAriño diagnostics", collectDiagnostics()));
+        Toast.makeText(this, "Diagnostics copied", Toast.LENGTH_SHORT).show();
+    }
+
+    private void shareDiagnostics() {
+        Intent share = new Intent(Intent.ACTION_SEND);
+        share.setType("text/plain");
+        share.putExtra(Intent.EXTRA_SUBJECT, "MiniAriño desktop diagnostics");
+        share.putExtra(Intent.EXTRA_TEXT, collectDiagnostics());
+        startActivity(Intent.createChooser(share, "Share MiniAriño diagnostics"));
     }
 
     private boolean isWorkspacePath(File file) {

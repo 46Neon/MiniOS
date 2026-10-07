@@ -8,7 +8,9 @@ The build stages only the ARM64 PRoot runtime files needed by the APK. The sourc
 | libtalloc | 2.5.0; `termux/termux-packages` commit `bddd9721910e56bc36412a764b4b4f7bbdbb1eb1`; source archive SHA-256 `912afa237510ae542a7733998eb18a12bcda35ab6729c8e2ddb43e8d0ebab007` | GPL-3.0 | `556591f43bb773ad8777e1a29522640866a55f95dab71914418b94a8c58ad5a7` |
 | libandroid-shmem | 0.7; `termux/termux-packages` commit `b25e257208da6d2e8b558b8a2b51762158a2e806`; source archive SHA-256 `1e5ff8459bc0a8c229dd8a94b27d119987e09ef3414331c2b5ebfff20b98e867` | BSD-3-Clause | `0da3a24d558b93c92bcf8d611e0826a99ff96e396b148e6cdf33b47c47c57ff6` |
 
-The corresponding GPL-2.0, GPL-3.0, and BSD-3-Clause license texts are shipped in `app/src/main/assets/proot-licenses/`.
+The corresponding GPL-2.0, GPL-3.0, and BSD-3-Clause license texts are shipped in `app/src/main/assets/proot-licenses/` and copied into the instrumentation-test APK's x86_64 PRoot fixture.
+
+The API 35 emulator test uses the same Termux PRoot version and source lineage built for x86_64, separate from the production ARM64 runtime. Its fixed package archive SHA-256 values are: PRoot `77ea45540071ca543adda2b51aca2bc3761c52904d013fd0890682288eff9455`, libtalloc `b8c6d95f20075dc1f9ec6573575b2444e8d526e48e0d8d6d5cf4e071e6e06530`, and libandroid-shmem `ffa9e4c87467b158b148d0ff92dda796aa038276c2075af3269cdcdb06f25797`. `scripts/fetch_proot_runtime.py --arch x86_64` checks each hash, Debian package architecture metadata, and ELF machine number before staging only these test assets under `android/test-assets/`; the APK's production Linux runtime remains ARM64.
 
 ## Debian
 
