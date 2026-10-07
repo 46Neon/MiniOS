@@ -84,10 +84,17 @@ public final class LinuxRuntimeExecInstrumentedTest {
         // Minimal guest root: use the emulator's same-ABI shell through explicit binds. This
         // exercises PRoot's guest exec/loader path without downloading a second distro image.
         Os.symlink("/system/bin/sh", new File(guest, "bin/sh").getAbsolutePath());
-        ProcessBuilder builder = new ProcessBuilder(
-                new File(bin, "proot").getAbsolutePath(), "--link2symlink", "-0", "-r", guest.getAbsolutePath(),
-                "-b", "/system:/system", "-b", "/apex:/apex", "-b", "/dev:/dev", "-b", "/proc:/proc",
+        java.util.List<String> command = new java.util.ArrayList<>();
+        command.add(new File(bin, "proot").getAbsolutePath());
+        java.util.Collections.addAll(command, "--link2symlink", "-0", "-r", guest.getAbsolutePath(),
+                "-b", "/system:/system");
+        // Android 8 does not have /apex. Bind it only on hosts where the directory exists.
+        if (new File("/apex").isDirectory()) {
+            java.util.Collections.addAll(command, "-b", "/apex:/apex");
+        }
+        java.util.Collections.addAll(command, "-b", "/dev:/dev", "-b", "/proc:/proc",
                 "-w", "/", "/bin/sh", "-c", "echo " + SUCCESS);
+        ProcessBuilder builder = new ProcessBuilder(command);
         builder.environment().put("LD_LIBRARY_PATH", lib.getAbsolutePath());
         builder.environment().put("PROOT_LOADER", new File(loaderDir, "loader").getAbsolutePath());
         builder.environment().put("PROOT_TMP_DIR", new File(tmp, "proot").getAbsolutePath());
