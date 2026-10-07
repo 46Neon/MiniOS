@@ -13,6 +13,12 @@ mkdir -p "$XDG_RUNTIME_DIR" /root/.cache /root/.config
 chmod 700 "$XDG_RUNTIME_DIR"
 
 required_commands="startxfce4 xfce4-session xfce4-terminal thunar dbus-launch dbus-send"
+prepare_only=0
+case "${1:-}" in
+    --prepare-only) prepare_only=1 ;;
+    --start|"") ;;
+    *) echo "Unknown MiniAriño desktop mode: $1" >&2; exit 2 ;;
+esac
 needs_install=0
 for command_name in $required_commands; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
@@ -20,10 +26,10 @@ for command_name in $required_commands; do
         break
     fi
 done
-if [ "$needs_install" -eq 1 ] || [ ! -f /root/.miniarino-xfce-packages-ready ]; then
+if [ "$needs_install" -eq 1 ] || [ ! -f /root/.miniarino-xfce-packages-ready ] || [ ! -d /usr/share/X11/xkb ]; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
-    apt-get install -y --no-install-recommends xfce4 xfce4-terminal thunar dbus-x11
+    apt-get install -y --no-install-recommends xfce4 xfce4-terminal thunar dbus-x11 xkb-data
     for command_name in $required_commands; do
         command -v "$command_name" >/dev/null 2>&1 || {
             echo "Required XFCE command is missing after package installation: $command_name" >&2
@@ -31,6 +37,14 @@ if [ "$needs_install" -eq 1 ] || [ ! -f /root/.miniarino-xfce-packages-ready ]; 
         }
     done
     touch /root/.miniarino-xfce-packages-ready
+fi
+if [ ! -d /usr/share/X11/xkb ]; then
+    echo "Required XKB keyboard data is missing after package installation" >&2
+    exit 26
+fi
+if [ "$prepare_only" -eq 1 ]; then
+    echo MINIARINO_XFCE_PREPARED
+    exit 0
 fi
 
 # dbus-launch creates a private session bus; wait for XFCE's session-manager name

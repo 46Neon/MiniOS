@@ -62,8 +62,9 @@ final class LinuxRuntime {
         this.binDir = new File(base, "usr/bin");
         this.libDir = new File(base, "usr/lib");
         this.loaderDir = new File(base, "usr/libexec/proot");
-        // Lorie is started with this same app-private TMPDIR so its Unix X socket is visible in Debian /tmp.
-        this.tmpDir = new File(context.getFilesDir(), "tmp");
+        // Keep Lorie's socket at the Debian guest's real /tmp path. Lorie derives
+        // font paths from dirname(TMPDIR), so the parent must be the guest root.
+        this.tmpDir = new File(rootfs, "tmp");
     }
 
     boolean isReady() {
@@ -74,7 +75,7 @@ final class LinuxRuntime {
     void provision(Progress progress) throws Exception {
         ensureDir(base); ensureDir(binDir); ensureDir(libDir); ensureDir(loaderDir); ensureDir(tmpDir); ensureDir(new File(tmpDir, "proot"));
         installBundledRuntime();
-        if (new File(rootfs, ROOT_MARKER).isFile()) return;
+        if (new File(rootfs, ROOT_MARKER).isFile()) { ensureDisplayTemp(); return; }
         File archive = new File(base, "debian-arm64-rootfs.tar.gz");
         String token = fetchDockerPullToken();
         verifyPinnedManifest(token);
@@ -91,7 +92,17 @@ final class LinuxRuntime {
         }
         deleteTree(rootfs);
         if (!staging.renameTo(rootfs)) throw new IOException("Cannot finalize Debian root filesystem installation");
+        ensureDisplayTemp();
     }
+
+    private void ensureDisplayTemp() throws IOException {
+        ensureDir(tmpDir);
+        if (!tmpDir.setReadable(true, false) || !tmpDir.setWritable(true, false) || !tmpDir.setExecutable(true, false))
+            throw new IOException("Cannot prepare Debian /tmp for the embedded display server");
+    }
+
+    File displayTempDir() { return tmpDir; }
+    File xkbConfigDir() { return new File(rootfs, "usr/share/X11/xkb"); }
 
     private void installBundledRuntime() throws IOException {
         copyAssetIfMissing("proot/bin/proot", new File(binDir, "proot"), true);
@@ -351,9 +362,18 @@ final class LinuxRuntime {
         } catch (IOException ignored) { }
     }
 
+    Process prepareXfceDesktop(File logFile) throws IOException {
+        return startXfceScript(logFile, true);
+    }
+
     Process startXfceDesktop(File logFile) throws IOException {
+        return startXfceScript(logFile, false);
+    }
+
+    private Process startXfceScript(File logFile, boolean prepareOnly) throws IOException {
         if (!isReady()) throw new IOException("Debian ARM64 is not installed");
         writeGuestDns();
+        ensureDisplayTemp();
         File script = new File(base, "xfce-session.sh");
         copyAsset("linux/xfce-session.sh", script);
         String proot = new File(binDir, "proot").getAbsolutePath();
@@ -362,7 +382,8 @@ final class LinuxRuntime {
                 "-b", "/dev", "-b", "/proc", "-b", "/sys", "-b", temp + ":/tmp",
                 "-b", script.getAbsolutePath() + ":/tmp/miniarino-xfce-session.sh",
                 "-b", new File(base, "android-resolv.conf").getAbsolutePath() + ":/etc/resolv.conf",
-                "-w", "/root", "/bin/sh", "/tmp/miniarino-xfce-session.sh");
+                "-w", "/root", "/bin/sh", "/tmp/miniarino-xfce-session.sh",
+                prepareOnly ? "--prepare-only" : "--start");
         builder.environment().put("LD_LIBRARY_PATH", libDir.getAbsolutePath());
         builder.environment().put("PROOT_LOADER", new File(loaderDir, "loader").getAbsolutePath());
         builder.environment().put("PROOT_TMP_DIR", new File(tmpDir, "proot").getAbsolutePath());
@@ -378,6 +399,22 @@ final class LinuxRuntime {
         builder.redirectErrorStream(true);
         builder.redirectOutput(logFile);
         return builder.start();
+    }
+
+    void awaitXfcePreparation(Process process, File logFile) throws Exception {
+        long deadline = System.currentTimeMillis() + DESKTOP_START_TIMEOUT_MS;
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                int exit = process.exitValue();
+                if (exit != 0) throw new IOException("XFCE display support installation failed (code " + exit + "). " + recentLog(logFile));
+                if (!xkbConfigDir().isDirectory()) throw new IOException("Debian did not install the XKB keyboard data required by the embedded display server. " + recentLog(logFile));
+                return;
+            } catch (IllegalThreadStateException running) {
+                Thread.sleep(500L);
+            }
+        }
+        process.destroy();
+        throw new IOException("Timed out preparing the XFCE display support. " + recentLog(logFile));
     }
 
     void awaitXfceSession(Process process, File logFile) throws Exception {
