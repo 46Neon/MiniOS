@@ -123,7 +123,7 @@ final class LinuxRuntime {
             int code = connection.getResponseCode();
             if (code != HttpURLConnection.HTTP_OK) throw new IOException("Pinned Debian OCI manifest returned HTTP " + code);
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-            try (InputStream in = connection.getInputStream()) { copy(in, bytes, null); }
+            try (InputStream in = connection.getInputStream()) { copyBounded(in, bytes, null, 131072L); }
             byte[] document = bytes.toByteArray();
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             if (!OCI_MANIFEST_DIGEST.substring("sha256:".length()).equals(hex(digest.digest(document)))) throw new IOException("Debian OCI manifest SHA-256 verification failed");
@@ -148,7 +148,7 @@ final class LinuxRuntime {
             if (advertised >= 0 && advertised != ROOTFS_LAYER_BYTES) throw new IOException("Unexpected Debian layer size");
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             try (InputStream in = new BufferedInputStream(connection.getInputStream()); FileOutputStream out = new FileOutputStream(part)) {
-                copy(in, out, digest);
+                copyBounded(in, out, digest, ROOTFS_LAYER_BYTES);
             }
             String actual = hex(digest.digest());
             if (!ROOTFS_LAYER_SHA256.equals(actual) || part.length() != ROOTFS_LAYER_BYTES) {
@@ -250,15 +250,24 @@ final class LinuxRuntime {
     private static void copyExactly(InputStream in, OutputStream out, long count) throws IOException { byte[] b = new byte[32768]; while (count > 0) { int n = in.read(b, 0, (int) Math.min(b.length, count)); if (n < 0) throw new IOException("Truncated Debian rootfs file"); out.write(b, 0, n); count -= n; } }
     private static void skipExactly(InputStream in, long count) throws IOException { byte[] b = new byte[8192]; while (count > 0) { long n = in.skip(count); if (n <= 0) { int r = in.read(b, 0, (int) Math.min(b.length, count)); if (r < 0) throw new IOException("Truncated Debian rootfs archive"); n = r; } count -= n; } }
     private static void copy(InputStream in, OutputStream out, MessageDigest digest) throws IOException { byte[] b = new byte[32768]; int n; while ((n = in.read(b)) >= 0) { out.write(b, 0, n); if (digest != null) digest.update(b, 0, n); } }
+    private static void copyBounded(InputStream in, OutputStream out, MessageDigest digest, long maximum) throws IOException {
+        byte[] b = new byte[32768]; long total = 0; int n;
+        while ((n = in.read(b)) >= 0) {
+            total += n;
+            if (total > maximum) throw new IOException("Downloaded OCI object exceeds its pinned size limit");
+            out.write(b, 0, n); if (digest != null) digest.update(b, 0, n);
+        }
+    }
     private static boolean allZero(byte[] b) { for (byte value : b) if (value != 0) return false; return true; }
     private static String tarString(byte[] b, int off, int len) { int end = off; while (end < off + len && b[end] != 0) end++; return new String(b, off, end - off, StandardCharsets.UTF_8); }
     private static long tarOctal(byte[] b, int off, int len) throws IOException { String s = tarString(b, off, len).trim(); if (s.isEmpty()) return 0; try { return Long.parseLong(s, 8); } catch (NumberFormatException e) { throw new IOException("Invalid numeric field in rootfs tar", e); } }
     private static String hex(byte[] b) { StringBuilder s = new StringBuilder(); for (byte v : b) s.append(String.format(Locale.US, "%02x", v & 0xff)); return s.toString(); }
     private static void ensureDir(File dir) throws IOException { if (dir != null && !dir.isDirectory() && !dir.mkdirs() && !dir.isDirectory()) throw new IOException("Cannot create private Linux environment directory"); }
     private static void deleteTree(File path) throws IOException {
-        if (path == null || !path.exists()) return;
-        boolean link = false;
-        try { link = (Os.lstat(path.getAbsolutePath()).st_mode & OsConstants.S_IFMT) == OsConstants.S_IFLNK; } catch (Exception ignored) { }
+        if (path == null) return;
+        boolean link = false; boolean exists = path.exists();
+        try { link = (Os.lstat(path.getAbsolutePath()).st_mode & OsConstants.S_IFMT) == OsConstants.S_IFLNK; exists = true; } catch (Exception ignored) { }
+        if (!exists) return;
         if (!link && path.isDirectory()) {
             File[] children = path.listFiles();
             if (children != null) for (File child : children) deleteTree(child);
