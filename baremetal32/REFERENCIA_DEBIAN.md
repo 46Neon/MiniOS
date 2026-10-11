@@ -1,4 +1,6 @@
-# Referencia Debian 13 amd64
+# Referencia histórica: Debian 13 amd64
+
+> Nota de archivo para un experimento bare-metal/QEMU antiguo. No describe el producto principal actual, que es nativo Termux/XFCE.
 
 Referencia declarada para el sistema que debe preservarse:
 

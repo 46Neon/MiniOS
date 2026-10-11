@@ -1,0 +1,1619 @@
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/.github/workflows/baremetal32.yml MiniOS-termux-native-local/.github/workflows/baremetal32.yml
+--- a/.github/workflows/baremetal32.yml	2026-10-02 20:13:46.050881100 +0000
++++ b/.github/workflows/baremetal32.yml	2026-10-02 20:51:50.532750686 +0000
+@@ -1,11 +1,7 @@
+-name: MiniAriño bare-metal x86-32 Fase 1
++name: Legacy (manual) bare-metal x86-32 prototype
+ 
++# Archived historical prototype; no longer part of product CI or defaults.
+ on:
+-  pull_request:
+-    branches: [main]
+-    paths:
+-      - 'baremetal32/**'
+-      - '.github/workflows/baremetal32.yml'
+   workflow_dispatch:
+ 
+ permissions:
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/.github/workflows/build-image.yml MiniOS-termux-native-local/.github/workflows/build-image.yml
+--- a/.github/workflows/build-image.yml	2026-10-02 20:13:46.054881300 +0000
++++ b/.github/workflows/build-image.yml	2026-10-02 20:51:47.560750541 +0000
+@@ -1,8 +1,8 @@
+-name: Build MiniAriño image
++name: Legacy (manual) Debian/QEMU image build
+ 
++# Explicitly manual, legacy compatibility path. Native pull-request CI is
++# native-tests.yml and does not install image-builder or Android packages.
+ on:
+-  pull_request:
+-    branches: [main]
+   workflow_dispatch:
+     inputs:
+       image_gib:
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/.github/workflows/native-tests.yml MiniOS-termux-native-local/.github/workflows/native-tests.yml
+--- a/.github/workflows/native-tests.yml	1970-01-01 00:00:00.000000000 +0000
++++ b/.github/workflows/native-tests.yml	2026-10-02 20:51:43.800750356 +0000
+@@ -0,0 +1,35 @@
++name: Native Termux scripts (host-safe)
++
++on:
++  pull_request:
++    branches: [main]
++  push:
++    branches: [main]
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++concurrency:
++  group: miniarino-native-tests-${{ github.ref }}
++  cancel-in-progress: true
++
++jobs:
++  host-safe-tests:
++    runs-on: ubuntu-24.04
++    timeout-minutes: 10
++    steps:
++      - name: Check out source
++        uses: actions/checkout@v4
++
++      - name: Check shell syntax
++        run: |
++          find scripts tests -type f -name '*.sh' -print0 | while IFS= read -r -d '' file; do
++            bash -n "$file"
++          done
++
++      - name: Run safe mocked native tests
++        run: bash tests/test-termux-native.sh
++
++      - name: Confirm plain make is a non-installing help target
++        run: make
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/Makefile MiniOS-termux-native-local/Makefile
+--- a/Makefile	2026-10-02 20:13:46.054881300 +0000
++++ b/Makefile	2026-10-02 20:50:26.458990814 +0000
+@@ -1,24 +1,71 @@
+ SHELL := /bin/bash
+ IMAGE := build/os.img
+ 
+-.PHONY: all image verify run debug selftest test-qemu-runner clean
+-all: image
+-
+-# The image is intentionally rebuilt on every invocation, including after clean.
+-image:
++.PHONY: all help native-help termux-native-check termux-native-install \
++        termux-native-start termux-native-stop termux-native-doctor \
++        termux-native-profile test test-termux-native image verify run debug \
++        selftest test-qemu-runner clean legacy-image legacy-verify legacy-run legacy-debug
++
++# Deliberately safe default: print native-first guidance; do not build an image,
++# install packages, or launch a GUI as a side effect of plain `make`.
++.DEFAULT_GOAL := help
++all: help
++
++help native-help:
++	@printf '%s\n' \
++	  'MiniAriño — Termux + Termux:X11 (propuesta local; requiere prueba en Android)' \
++	  '' \
++	  '  make termux-native-check    Inspección sin instalar paquetes' \
++	  '  make termux-native-install  Instalación opt-in; solicita confirmación en Termux' \
++	  '  make termux-native-doctor   Diagnóstico de solo lectura' \
++	  '  make termux-native-profile Aplicar perfil móvil aislado y reversible' \
++	  '  make termux-native-start    Iniciar XFCE en Termux:X11' \
++	  '  make termux-native-stop     Detener la sesión administrada' \
++	  '  make test                  Pruebas locales seguras (sin Android GUI)' \
++	  '' \
++	  '  make legacy-image / legacy-verify / legacy-run  Ruta Debian/QEMU manual heredada' \
++	  '  make clean                               Limpiar temporales heredados (no borra os.img)'
++
++# Current product path: native packages in Termux, displayed by the local
++# Termux:X11 Android app. No distro, PRoot, QEMU, APK, or network server.
++termux-native-check:
++	./scripts/termux-native/install.sh --check
++
++termux-native-install:
++	./scripts/termux-native/install.sh --install
++
++termux-native-start:
++	./scripts/termux-native/start.sh
++
++termux-native-stop:
++	./scripts/termux-native/stop.sh
++
++termux-native-doctor:
++	./scripts/termux-native/doctor.sh
++
++termux-native-profile:
++	./scripts/termux-native/mobile-profile.sh --apply
++
++test: test-termux-native
++
++test-termux-native:
++	bash ./tests/test-termux-native.sh
++
++# Kept for maintainers who explicitly work on the archived image builder.
++# These targets are never prerequisites of the default target.
++legacy-image image:
+ 	mkdir -p build
+ 	./scripts/build-image.sh "$(IMAGE)"
+ 
+-verify:
++legacy-verify verify:
+ 	./scripts/verify-image.sh "$(IMAGE)"
+ 
+-run: verify
++legacy-run run: legacy-verify
+ 	./scripts/run-qemu.sh "$(IMAGE)"
+ 
+-debug: verify
++legacy-debug debug: legacy-verify
+ 	DEBUG=1 ./scripts/run-qemu.sh "$(IMAGE)"
+ 
+-# Run from a logged-in, unprivileged XFCE terminal inside MiniAriño.
+ selftest:
+ 	./scripts/miniarino-selftest.sh
+ 
+@@ -26,6 +73,6 @@
+ 	./tests/test-run-qemu.sh
+ 	bash ./tests/test-display-mode.sh
+ 
+-# Preserve any existing os.img; remove only disposable build work files.
++# Remove only disposable image-builder work files; preserve any final image.
+ clean:
+ 	./scripts/clean-build.sh
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/README.md MiniOS-termux-native-local/README.md
+--- a/README.md	2026-10-02 20:13:46.054881300 +0000
++++ b/README.md	2026-10-02 20:53:38.104987415 +0000
+@@ -1,62 +1,73 @@
+-# MiniAriño — escritorio Linux para QEMU/Termux
++# MiniAriño — escritorio nativo de Termux + Termux:X11
+ 
+-MiniAriño cambia de estrategia: **Debian 13 amd64 + kernel Linux + XFCE**, con arranque BIOS/SeaBIOS, GRUB y disco IDE en QEMU. Ya no se ampliará el kernel bare-metal de ensamblador para simular Linux. Los fuentes anteriores se archivan bajo `legacy/baremetal/` y no participan en la nueva construcción.
++**Producto principal:** un escritorio XFCE nativo dentro de Termux, mostrado localmente por la aplicación Android Termux:X11. El camino principal no usa imagen de disco, QEMU, PRoot ni una distribución Linux. Tampoco es una APK independiente ni un servidor/backend.
+ 
+-## Estado honesto
++> **Estado de esta migración local:** scripts, documentación y pruebas host-safe están preparados en este árbol, pero no se han instalado ni ejecutado en un teléfono. La interfaz completa todavía requiere prueba física en el Android de destino; no se declara completa ni libre de errores.
+ 
+-Esta rama contiene el constructor reproducible, la configuración prevista de Debian/XFCE/GRUB y las pruebas estructurales y de arranque. **La imagen no se considera terminada ni verificada hasta que el workflow la construya, pase sus comprobaciones y se pruebe la interfaz en QEMU/Termux.** El entorno de esta sesión no cuenta con `debootstrap`, dispositivos loop ni QEMU para fabricar y arrancar la imagen aquí.
++## Primer uso en Android
+ 
+-El repositorio MiniOS auditado no incluía la `os.img` que Lennd había probado anteriormente. Por eso el constructor conserva una imagen previa si encuentra `build/os.img`, archivándola bajo `reference/images/` antes de sustituirla, pero no puede preservar la copia local que no se entregó.
++1. Instala Termux y Termux:X11 desde fuentes oficiales compatibles entre sí. Instala/abre la app Android Termux:X11 en el mismo teléfono. No descargues APKs desde este repositorio.
++2. Usa una copia local revisada de este árbol dentro de Termux. Si necesitas clonar el repositorio y no tienes `git`, la instalación de `git` es una decisión tuya; usa `pkg install git` solamente si lo confirmas. No uses `curl | bash`.
++3. Inspecciona las dependencias sin cambiar paquetes:
+ 
+-## Qué integra
++   ```sh
++   ./scripts/termux-native/install.sh --check
++   ```
+ 
+-- Debian 13 `trixie`, amd64, kernel Linux, GRUB para BIOS/MBR y raíz ext4 dentro de una imagen raw dispersa (16 GiB por defecto, tamaño ajustable).
+-- Escritorio XFCE/LightDM, Thunar, terminal Bash, Firefox ESR, Synaptic/GDebi, herramientas de desarrollo y `nmap`.
+-- Usuario normal `miniarino`, acceso automático al escritorio para la VM de pruebas y saludo de arranque **“MiniAriño bienvenido”**.
+-- GRUB con tres opciones: Iniciar MiniAriño, Reiniciar y Apagar.
+-- QEMU con disco IDE y tarjeta de red e1000 emulada; la pila de Linux proporciona procesos, memoria virtual, filesystem, sockets, TCP/TLS y compatibilidad ELF de Linux.
++4. Solo si quieres instalar XFCE y el paquete acompañante de Termux:X11, solicita esa acción explícita:
+ 
+-## Construcción
++   ```sh
++   ./scripts/termux-native/install.sh --install
++   ```
+ 
+-La construcción requiere un host Linux amd64 con acceso root, `debootstrap`, el paquete `debian-archive-keyring`, `sfdisk`, `losetup`, `mkfs.ext4`, `mount`, `chroot` y red. **Termux en Android ARM se usa para ejecutar la VM, no para construir su filesystem**: el workflow de GitHub Actions es la vía recomendada.
++   El comando vuelve a pedir confirmación y usa `pkg` de Termux para añadir el repositorio oficial `x11-repo` y solicitar los paquetes seleccionados `termux-x11-nightly` y `xfce`. No añade TUR/repositorios de terceros, no ejecuta `pkg upgrade`, no elimina paquetes y no instala APKs. Comprueba las instrucciones oficiales vigentes para la combinación de app Android y paquetes.
++5. Abre la aplicación Termux:X11; en Termux ejecuta el diagnóstico de solo lectura:
+ 
+-```sh
+-make clean && make
+-make verify
+-```
++   ```sh
++   ./scripts/termux-native/doctor.sh
++   ```
+ 
+-`make` reconstruye la imagen cada vez. `make clean` elimina solo temporales: no borra `build/os.img`. Si ya existía una imagen con ese nombre, el constructor la conserva con su hash en `reference/images/` antes de reemplazarla, pero solo después de que la nueva imagen pase su verificación. No subas imágenes privadas o de gran tamaño al historial de Git; usa artefactos/releases.
++6. Opcional: para habilitar el panel MiniAriño y los accesos en XFCE, aplica el perfil móvil después de revisar el script. Es aislado, opt-in y reversible:
+ 
+-La salida predeterminada es `build/os.img` (16 GiB lógicos, archivo raw disperso). Puedes elegir otro tamaño entero, entre 1 y 2048 GiB, con `MINIARINO_IMAGE_GIB=24 make`; usa la misma variable en `make verify`. El límite superior corresponde al direccionamiento MBR de 512 bytes y no se ha probado cada tamaño. Para un build de GitHub Actions, ejecuta manualmente el workflow y elige 8, 16, 24 o 32 GiB. El tamaño del archivo comprimido depende de los datos usados; no equivale al tamaño lógico de la imagen.
++   ```sh
++   ./scripts/termux-native/mobile-profile.sh --status
++   ./scripts/termux-native/mobile-profile.sh --apply
++   ```
+ 
+-## Prueba en Termux/QEMU
++   `--apply` solicita confirmación y conserva una copia de seguridad. No modifica `~/.config/xfce4` ni `~/Desktop`; pone sus archivos propios bajo `~/.config/miniarino-native` y `~/.local/share/miniarino-native`. El perfil experimental incluye un panel XFCE con identidad MiniAriño, menú y accesos Terminal, Archivos (Thunar) y Navegador Android. Para revertir, primero detén XFCE, ejecuta `mobile-profile.sh --restore` y confirma; se restaura únicamente si los archivos del perfil no cambiaron desde que se aplicó. Si hubo cambios, no los pisa y conserva el respaldo para revisión.
++7. Inicia y detén el escritorio administrado:
+ 
+-Una vez descargados el artefacto `.img.gz` y este repositorio en Termux, abre Termux:X11 y gira el teléfono a horizontal antes de iniciar QEMU:
++   ```sh
++   ./scripts/termux-native/start.sh
++   ./scripts/termux-native/stop.sh
++   ```
+ 
+-```sh
+-chmod +x run-termux.sh
+-termux-x11 :0 &
+-export DISPLAY=:0
+-./run-termux.sh /ruta/al/artefacto/os.img.gz
+-```
++   Predeterminado: display `:1`. Variantes opcionales: `MINIOS_X11_DISPLAY=:2 ./scripts/termux-native/start.sh` o `MINIOS_X11_DPI=120 ./scripts/termux-native/start.sh`. DPI es una experimentación, no una recomendación universal. Los targets Make `termux-native-*` son solo conveniencia; `make` a secas no instala, construye ni inicia nada.
++8. El navegador **no se ejecuta dentro de XFCE**: no se ha confirmado un navegador GUI nativo de Termux adecuado para este producto. El acceso «Navegador Android» pide una URL y la entrega con `termux-open-url`; Android puede abrirla fuera del escritorio. No cambia ni debilita el sandbox del navegador. Si esa herramienta no existe, abre tu navegador Android manualmente.
++9. Para acceso opcional al almacenamiento compartido, ejecuta manualmente `termux-setup-storage` y acepta el permiso de Android. No se solicita ese permiso automáticamente.
+ 
+-El lanzador usa TCG, 2 vCPU, 2 GiB, VGA estándar, disco IDE, red user-mode con e1000 y agrega tableta absoluta/teclado USB si la build de QEMU los admite. En Termux solicita pantalla completa a la app Termux:X11 y QEMU; con GTK activa `zoom-to-fit` y muestra el cursor. Rota el teléfono a horizontal: XFCE selecciona el modo panorámico más amplio que QEMU anuncie y cae a uno compatible si no existe. Para volver a ventana usa `QEMU_FULLSCREEN=off`; QEMU también permite alternar pantalla completa con Ctrl+Alt+F. `QEMU_DISPLAY=auto` elige SDL/GTK cuando hay un display exportado y esos backends existen; si no, abre VNC en `127.0.0.1:5901`. Para elegirlo explícitamente, usa `QEMU_DISPLAY=sdl`, `QEMU_DISPLAY=gtk` o `QEMU_DISPLAY=vnc`. Puedes desactivar periféricos USB con `QEMU_USB_INPUT=off`, o ajustar `RAM` y `SMP` según el teléfono.
++El registro de sesión está en `$PREFIX/var/run/minios-native-xfce/session.log`. Termux:X11 debe estar instalada y abierta; `doctor.sh` comprueba el comando de Termux, no puede certificar la app Android ni el dibujo del escritorio.
+ 
+-Al expandir `.img.gz`, el script comprueba que `dd` admita `conv=sparse` y se detiene con un aviso si no; así evita reservar todo el tamaño lógico configurado cuando la imagen tiene bloques vacíos. En ARM, x86-64 se emula por software y la interfaz —especialmente Firefox— puede ser lenta; fullscreen y mayor resolución no aceleran el CPU emulado. La disponibilidad exacta de QEMU y Termux:X11 depende de los repositorios y la versión instalados en el dispositivo; esta comprobación local no sustituye la prueba en un teléfono real.
++## Límites y seguridad
+ 
+-**Cuenta de la imagen de prueba:** usuario `miniarino`, clave inicial `miniarino`; cámbiala inmediatamente con `passwd`. La imagen es para pruebas en VM, no un servidor público. Mantén la red en user-mode y no expongas servicios ni uses credenciales reales.
++- MiniAriño integra XFCE/Thunar/terminal nativos de Termux en el entorno de la propia app; no promete compatibilidad con todas las aplicaciones de escritorio Linux, binarios de otras distribuciones, apps Windows/macOS o dependencias arbitrarias.
++- El sistema de archivos accesible es el de Termux, sujeto a permisos Android. El enlace de almacenamiento compartido requiere permiso explícito del usuario.
++- El perfil móvil presenta una configuración XFCE experimental; la escala, orientación, panel, teclado en pantalla, gestos, rendimiento y comportamiento al reanudar deben ajustarse tras probar el teléfono.
++- Termux:X11 es local al dispositivo. Los scripts no instalan ni configuran VNC/RDP, túneles, servicios de red ni un servidor remoto.
++- Los únicos paquetes instalables por este scaffold son los nombres explícitos que pasan a `pkg`; no usa `apt`, `curl | bash`, `pkg upgrade`, desinstalaciones ni APKs.
+ 
+-## Alcance de compatibilidad
++## Validación local
+ 
+-MiniAriño ejecuta aplicaciones Linux amd64 empaquetadas para Debian. Puede soportar aplicaciones ELF32 Linux seleccionadas mediante multiarch y dependencias compatibles; eso se validará aparte. **No promete ejecutar aplicaciones nativas de Windows o macOS**, ni todos los binarios Linux de cualquier distribución. Para instalar software, prefiere repositorios Debian/`apt` o paquetes `.deb` de amd64 con firmas verificadas. `nmap` sirve para laboratorios y redes que tengas autorización de auditar; la red NAT de QEMU limita algunos escaneos de la LAN del teléfono.
++Desde la raíz del árbol:
++
++```sh
++bash -n scripts/termux-native/*.sh tests/test-termux-native.sh
++bash tests/test-termux-native.sh
++make
++```
+ 
+-## Verificación
++La suite usa un `PREFIX`, `HOME`, `pkg` y `termux-open-url` falsos dentro de un directorio temporal. Comprueba rechazos fuera de Termux, cancelación/confirmación de la instalación, entrega HTTP(S) y copia/restauración del perfil. No instala paquetes ni prueba Android, XFCE ni una pantalla gráfica. GitHub Actions ejecuta estas comprobaciones host-safe sin instalar dependencias de compilación.
+ 
+-- `make verify`: tamaño configurado (16 GiB por defecto), tabla MBR y geometría de partición, firma `55 AA`, una partición ext4 Linux, GRUB BIOS, kernel, initramfs, paquetes/binarios XFCE, LightDM/autologin, sesión, servicios, wallpaper y launchers dentro del rootfs.
+-- `make selftest`, Ctrl+Alt+M o el acceso «Diagnóstico MiniAriño»: ejecutar **dentro de XFCE** como usuario `miniarino`, nunca como root. Comprueba en vivo sesión, D-Bus/X11, procesos, EWMH, servicios, Xfconf temporal, launchers y operaciones de archivo; guarda el informe en `~/.cache/miniarino-selftest/last.log` y el código de salida en `last.exitcode`. No instala ni ejecuta las pruebas internas upstream de Xfce.
+-- `scripts/smoke-qemu.sh`: arranque headless por BIOS y comprobación del saludo en consola serial. No sustituye una prueba visual de XFCE/teclado/ratón.
+-- `make test-qemu-runner`: prueba la selección SDL/GTK/VNC y los periféricos con un QEMU simulado; no sustituye la ejecución real en Android.
+-- `docs/PRUEBAS_ACEPTACION.md`: pruebas manuales en Termux/QEMU y las limitaciones actuales.
+-- `docs/INTEGRACION_50.md`: correspondencia de los 50 hitos con componentes Linux reutilizados.
++## Ruta Debian/QEMU preservada (heredada y manual)
+ 
+-No marcar como listo un release hasta pasar el workflow y la prueba manual visual en el dispositivo Termux/QEMU.
++Se conservan el constructor Debian, las listas de paquetes de imagen, los scripts QEMU, el workflow y los archivos bare-metal históricos para revisión/compatibilidad; ya no son el producto predeterminado. La imagen se construye únicamente de forma explícita (`make legacy-image`) o al ejecutar manualmente el workflow heredado. No se elimina código fuente ni se usa esa ruta en la instalación nativa. Consulta [`docs/LEGACY_QEMU.md`](docs/LEGACY_QEMU.md) y [`docs/TERMUX_NATIVE_MIGRATION.md`](docs/TERMUX_NATIVE_MIGRATION.md).
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/baremetal32/ARCHIVOS_PROYECTO.txt MiniOS-termux-native-local/baremetal32/ARCHIVOS_PROYECTO.txt
+--- a/baremetal32/ARCHIVOS_PROYECTO.txt	2026-10-02 20:13:46.054881300 +0000
++++ b/baremetal32/ARCHIVOS_PROYECTO.txt	2026-10-02 20:55:21.712582515 +0000
+@@ -1,3 +1,6 @@
++ARCHIVADO: experimento bare-metal x86-32, fuera del producto nativo Termux/XFCE.
++Este inventario se conserva para referencia; su workflow requiere ejecución manual.
++
+ MiniAriño bare-metal x86 de 32 bits — inventario
+ =================================================
+ 
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/baremetal32/ARQUITECTURA.md MiniOS-termux-native-local/baremetal32/ARQUITECTURA.md
+--- a/baremetal32/ARQUITECTURA.md	2026-10-02 20:13:46.054881300 +0000
++++ b/baremetal32/ARQUITECTURA.md	2026-10-02 20:55:24.844582669 +0000
+@@ -1,4 +1,6 @@
+-# MiniAriño bare-metal x86-32 — alcance y diseño propuesto
++# Bare-metal x86-32 archivado — alcance y diseño propuesto
++
++> Experimento histórico, fuera del producto principal Termux + Termux:X11. No es la ruta de arranque ni de instalación de MiniAriño actual; conservar solo para revisión.
+ 
+ ## Estado
+ 
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/baremetal32/REFERENCIA_DEBIAN.md MiniOS-termux-native-local/baremetal32/REFERENCIA_DEBIAN.md
+--- a/baremetal32/REFERENCIA_DEBIAN.md	2026-10-02 20:13:46.054881300 +0000
++++ b/baremetal32/REFERENCIA_DEBIAN.md	2026-10-02 20:55:31.480582994 +0000
+@@ -1,4 +1,6 @@
+-# Referencia Debian 13 amd64
++# Referencia histórica: Debian 13 amd64
++
++> Nota de archivo para un experimento bare-metal/QEMU antiguo. No describe el producto principal actual, que es nativo Termux/XFCE.
+ 
+ Referencia declarada para el sistema que debe preservarse:
+ 
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/baremetal32/docs/LIMITES_Y_GATES.md MiniOS-termux-native-local/baremetal32/docs/LIMITES_Y_GATES.md
+--- a/baremetal32/docs/LIMITES_Y_GATES.md	2026-10-02 20:13:46.054881300 +0000
++++ b/baremetal32/docs/LIMITES_Y_GATES.md	2026-10-02 20:55:28.060582826 +0000
+@@ -1,4 +1,6 @@
+-# Estado de implementación y gates — Fase 1 (hitos 1–10)
++# Experimento bare-metal archivado — límites/gates históricos
++
++> No forma parte del escritorio MiniAriño Termux/XFCE. Se conserva la evaluación de la antigua imagen de prueba; su ejecución de build/QEMU es solo manual.
+ 
+ ## Alcance de esta entrega
+ 
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/config/LEGACY.md MiniOS-termux-native-local/config/LEGACY.md
+--- a/config/LEGACY.md	1970-01-01 00:00:00.000000000 +0000
++++ b/config/LEGACY.md	2026-10-02 20:54:43.069713225 +0000
+@@ -0,0 +1,3 @@
++# Configuración heredada de la imagen Debian/QEMU
++
++`grub/`, `lightdm/`, `systemd/` y los recursos `xfce/` de este directorio pertenecen al rootfs Debian anterior. No se copian ni aplican al usuario Termux. El perfil móvil experimental nativo se crea, opt-in y con respaldo, desde `scripts/termux-native/mobile-profile.sh` bajo directorios MiniAriño separados.
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/docs/INTEGRACION_50.md MiniOS-termux-native-local/docs/INTEGRACION_50.md
+--- a/docs/INTEGRACION_50.md	2026-10-02 20:13:46.054881300 +0000
++++ b/docs/INTEGRACION_50.md	2026-10-02 20:54:31.072260340 +0000
+@@ -1,4 +1,6 @@
+-# Integración de los 50 hitos en una base Linux
++# Integración histórica de los 50 hitos en una base Linux
++
++> Documento heredado de la propuesta Debian/QEMU. No describe el producto principal actual, que es un escritorio nativo Termux/XFCE, ni debe usarse como afirmación de compatibilidad o arquitectura de esa ruta.
+ 
+ La decisión Debian convierte muchos hitos de implementar a **integrar, configurar y verificar**. Los hitos siguen siendo aceptación funcional; la implementación concreta ya no usa el kernel ensamblador antiguo.
+ 
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/docs/LEGACY_QEMU.md MiniOS-termux-native-local/docs/LEGACY_QEMU.md
+--- a/docs/LEGACY_QEMU.md	1970-01-01 00:00:00.000000000 +0000
++++ b/docs/LEGACY_QEMU.md	2026-10-02 20:54:08.874826675 +0000
+@@ -0,0 +1,37 @@
++# Compatibilidad heredada: imagen Debian/QEMU
++
++Esta documentación aplica solo a la ruta anterior de MiniOS. **No es la instalación ni el producto principal de MiniAriño**, y no interviene en Termux nativo/XFCE. Se conservan fuentes, listas de paquetes, scripts de imagen y CI manual para revisión/compatibilidad; no se eliminan.
++
++## Alcance
++
++El constructor genera una imagen raw Debian 13 `trixie` amd64 con GRUB BIOS/MBR, raíz ext4, XFCE/LightDM y herramientas Debian. Se ejecuta en QEMU, no como filesystem nativo Android. En Android ARM, x86-64 corre por emulación; el rendimiento gráfico/CPU es limitado. No se promete compatibilidad general con todos los programas Linux ni con aplicaciones Windows/macOS.
++
++`packages/base.txt`, `desktop.txt`, `development.txt` y `network.txt` son listas del rootfs Debian antiguo; **no son paquetes que se instalen dentro del camino nativo Termux**.
++
++## Comandos explícitos
++
++El `make` sin argumentos no crea imágenes. Solo para trabajar deliberadamente en la compatibilidad heredada:
++
++```sh
++make legacy-image
++make legacy-verify
++make legacy-run
++make legacy-debug
++make test-qemu-runner
++```
++
++También se conservan alias viejos `make image`, `verify`, `run` y `debug`; son comandos de la ruta heredada, no defaults. El workflow `.github/workflows/build-image.yml` se ejecuta únicamente con `workflow_dispatch` manual y descarga dependencias de build en Ubuntu. No se ejecuta en PR/CI nativa. El workflow bare-metal está igualmente limitado a ejecución manual.
++
++La compilación requiere un host Linux amd64 con privilegios para construir filesystem, montar/chroot, GRUB, `debootstrap`, `sfdisk`, `losetup`, `mkfs.ext4` y red. No usar esos pasos como solución a la instalación nativa Termux.
++
++La salida por defecto histórica es `build/os.img` (16 GiB lógicos; `MINIARINO_IMAGE_GIB` permite el tamaño del workflow). El constructor archiva una imagen previa encontrada antes de reemplazarla y el script `clean` conserva `build/os.img`. No subir imágenes privadas/grandes a Git. La salida del constructor no se considera verificada solo por estar presente.
++
++## Pruebas y seguridad
++
++- `make legacy-verify`: comprueba geometría de imagen, MBR/ext4, GRUB, kernel/initramfs y los componentes Debian esperados.
++- `scripts/smoke-qemu.sh`: prueba de arranque BIOS headless/serial.
++- `scripts/desktop-smoke-qemu.sh`: captura la GUI de esa imagen dentro de QEMU automatizado; no prueba Termux/XFCE nativo ni la interacción de Android.
++- `make test-qemu-runner`: prueba mocks de selección de pantalla/input; no reemplaza ejecución real.
++- `docs/PRUEBAS_ACEPTACION.md`: plan manual del camino antiguo.
++
++Una build o screenshot QEMU no certifica el teléfono Android. No expongas esta VM a redes públicas ni uses su credencial de prueba para información real; si generas una imagen de laboratorio, cambia credenciales antes de usarla. VNC/RDP/servicios no forman parte de la nueva ruta nativa.
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/docs/PRUEBAS_ACEPTACION.md MiniOS-termux-native-local/docs/PRUEBAS_ACEPTACION.md
+--- a/docs/PRUEBAS_ACEPTACION.md	2026-10-02 20:13:46.058881300 +0000
++++ b/docs/PRUEBAS_ACEPTACION.md	2026-10-02 20:54:27.876260183 +0000
+@@ -1,4 +1,6 @@
+-# Pruebas de aceptación MiniAriño
++# Pruebas de aceptación — ruta heredada Debian/QEMU
++
++> **Histórico/manual.** Este plan corresponde solo a la antigua imagen Debian/QEMU. No valida la ruta principal Termux + Termux:X11. La CI nativa no construye imágenes ni afirma probar la GUI de Android.
+ 
+ Este plan distingue controles automatizados de validación visual e interacción manual. Un artefacto no se considera terminado hasta que se construye desde cero, sus comprobaciones y las capturas de escritorio en QEMU pasan para el mismo commit; la interacción real en Termux sigue siendo una prueba separada. No se afirma que la interacción en el teléfono haya ocurrido solo porque compile o arranque el sistema.
+ 
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/docs/PRUEBAS_XFCE_UPSTREAM.md MiniOS-termux-native-local/docs/PRUEBAS_XFCE_UPSTREAM.md
+--- a/docs/PRUEBAS_XFCE_UPSTREAM.md	2026-10-02 20:13:46.058881300 +0000
++++ b/docs/PRUEBAS_XFCE_UPSTREAM.md	2026-10-02 20:54:34.436260505 +0000
+@@ -1,4 +1,6 @@
+-# Pruebas upstream de Xfce y cobertura MiniAriño
++# Auditoría histórica de pruebas upstream de Xfce
++
++> Contexto anterior a la migración nativa: el texto describe XFCE instalado en Debian/QEMU y las pruebas de aquella propuesta. No certifica el XFCE de Termux ni la experiencia de Android; cualquier conclusión requiere una prueba nueva de dispositivo.
+ 
+ Auditoría focalizada de los 19 proyectos visibles en el grupo oficial [`xfce`](https://gitlab.xfce.org/xfce), sus manifiestos de pruebas y el template compartido `xfce4-dev-tools/ci/build_project.yml`. Consulta: 2026-10-01. No es una revisión línea por línea ni una afirmación de que todas las pruebas upstream pasen en Debian.
+ 
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/docs/TERMUX_NATIVE_MIGRATION.md MiniOS-termux-native-local/docs/TERMUX_NATIVE_MIGRATION.md
+--- a/docs/TERMUX_NATIVE_MIGRATION.md	1970-01-01 00:00:00.000000000 +0000
++++ b/docs/TERMUX_NATIVE_MIGRATION.md	2026-10-02 20:53:58.770723102 +0000
+@@ -0,0 +1,84 @@
++# MiniAriño nativo en Termux: migración local y pruebas en teléfono
++
++## Objetivo y estado
++
++La dirección actual de producto es XFCE nativo en Termux + Termux:X11 en el mismo dispositivo Android. No se usa QEMU, PRoot ni una distribución Linux en la ruta principal. No se crea APK independiente, backend o servicio de red. Los archivos Debian/QEMU y bare-metal permanecen en el árbol como material heredado/manual; no se borran ni se construyen por defecto.
++
++Esta propuesta local está basada en el snapshot público `46Neon/MiniOS` commit `4044fd0aa7836e4806e930cd6fac684c7fe46cb3`. La preparación y pruebas host-safe no sustituyen instalar e interactuar con XFCE en el teléfono. **La GUI, los gestos, teclado, orientación, permisos, paquetes y compatibilidad del Android de destino no se han verificado. No declarar la migración lista hasta completar el plan manual.**
++
++## Componentes nativos
++
++- `scripts/termux-native/install.sh --check`: consulta herramientas sin usar `pkg`.
++- `install.sh --install`: vuelve a pedir confirmación y usa `pkg install` para el repo oficial Termux `x11-repo` y los paquetes seleccionados `termux-x11-nightly` y `xfce`. No corre actualizaciones globales ni elimina paquetes. No añade TUR/repositorios de terceros en modo automático, no instala APKs y no toca preferencias del usuario.
++- `doctor.sh`: comandos requeridos, almacenamiento opcional, estado, marcador de perfil y recordatorio de app X11. Solo lectura.
++- `start.sh` / `stop.sh`: inician/detienen una sesión administrada en `:1` por defecto. El supervisor registra sus propios PID/token y señala únicamente sus hijos con token coincidente; no ejecuta `pkill` ni barre sesiones ajenas. Si un hijo de esa sesión no responde a SIGTERM, solo se escala su señal si el token de propiedad aún coincide. Si el supervisor no se detiene, `stop.sh` no usa SIGKILL sobre él y avisa para revisar el log.
++- `browser.sh URL`: permite solo URL HTTP(S) y usa `termux-open-url` para transferir al navegador Android. No se afirma que corra dentro de XFCE, ni se instala o configura un browser.
++- `mobile-profile.sh --apply`: solo por elección explícita; solicita confirmación y copia los archivos de perfil previos a un directorio de respaldo privado. Emite panel XFCE de altura/tamaño experimental con menú MiniAriño y launchers de Terminal, Thunar y navegador Android. El perfil usa `XDG_CONFIG_HOME`/`XDG_DATA_HOME` aislados bajo nombres MiniAriño; no copia sobre `~/.config/xfce4` ni `~/Desktop`. `--restore` pide confirmación y revierte solo si los archivos siguen idénticos a los emitidos; conflictos abortan sin sobrescribir y dejan el respaldo disponible.
++- `session.log` y metadatos se guardan bajo `$PREFIX/var/run/minios-native-xfce/`.
++
++El uso del perfil y el panel sigue siendo experimental: aunque está aislado y es reversible, solo una sesión real puede revelar compatibilidad con la versión XFCE, plugins, tamaño de pantalla, rotación, densidad, toque/scroll, teclado en pantalla y reanudación Android.
++
++## Test local/CI
++
++```sh
++bash -n scripts/termux-native/*.sh tests/test-termux-native.sh
++bash tests/test-termux-native.sh
++make
++```
++
++Las pruebas usan `HOME`, `PREFIX`, `pkg` y `termux-open-url` falsos. Incluyen rechazo fuera de Termux, cancelación, confirmación de comandos de paquetes esperados, validación HTTP(S), aplicación, conflicto y restauración del perfil. No ejecutan un paquete real, no acceden a Android, no prueban el parser XFCE real y no confirman una interfaz visual.
++
++La CI normal en `.github/workflows/native-tests.yml` revisa sintaxis, ejecuta mocks y comprueba que `make` imprime la ayuda nativa sin construir una imagen. No instala herramientas de escritorio. Los workflows de imagen Debian y bare-metal son `workflow_dispatch` manuales y están fuera de la ruta CI del producto principal.
++
++## Prueba física requerida — Termux + Termux:X11
++
++Haz estos pasos con el teléfono que se usará para probar. Revisa el contenido de los scripts antes de ejecutarlos. Obtén Termux y Termux:X11 desde una fuente oficial compatible; no uses APKs publicados por este árbol.
++
++1. Abre Termux y Termux:X11. En la raíz del código ejecuta:
++
++   ```sh
++   ./scripts/termux-native/install.sh --check
++   ```
++
++   Confirma que no llama a `pkg`. Si faltan paquetes, revisa sus fuentes/versiones y después elige instalar:
++
++   ```sh
++   ./scripts/termux-native/install.sh --install
++   ```
++
++   Rechaza el prompt para probar cancelación sin cambios; solo acepta después de revisar la lista. El script usa `pkg`; no hagas `pkg upgrade` como parte de esta prueba. Si falla la resolución de paquetes o el canal oficial ya cambió, detente y registra el detalle en lugar de añadir TUR u otros repositorios.
++2. Ejecuta `./scripts/termux-native/doctor.sh`. Confirma comandos requeridos y abre la app Termux:X11 en Android. El doctor no puede saber si la app Android está instalada/abierta.
++3. Si deseas probar el perfil móvil experimental, aplica antes de iniciar el escritorio:
++
++   ```sh
++   ./scripts/termux-native/mobile-profile.sh --status
++   ./scripts/termux-native/mobile-profile.sh --apply
++   ```
++
++   Revisa panel inferior, menú MiniAriño y botones grandes Terminal/Thunar/Navegador Android. «Navegador Android» debe abrir una terminal para introducir URL y entregar la URL al navegador Android externo; puede salir de XFCE. Prueba orientación retrato y paisaje, legibilidad, iconos, tamaño táctil, menú, teclado en pantalla, entrada de texto, toque/clic/scroll, cambio de app, segundo plano/reanudación y suspensión. No des por adecuado el tamaño del panel por una prueba estática.
++4. Inicia y detén:
++
++   ```sh
++   ./scripts/termux-native/start.sh
++   ./scripts/termux-native/doctor.sh
++   ./scripts/termux-native/stop.sh
++   ```
++
++   Abre Thunar y Terminal; revisa `$PREFIX/var/run/minios-native-xfce/session.log` si algo falla. Repite arranque/detención y prueba `:2` solo si no colisiona con otra sesión. No borres metadatos de sesión o procesos a ciegas.
++5. Para probar almacenamiento compartido, ejecuta `termux-setup-storage` de forma manual y concede el permiso Android explícitamente; revisa Thunar. Denegarlo no debe impedir trabajar en `$HOME`.
++6. Repite `doctor.sh`, browser handoff y start/stop después de volver de segundo plano. Revisa que no se hayan cambiado preferencias de `~/.config/xfce4` ni archivos de `~/Desktop`.
++7. Para revertir el perfil (con XFCE detenido):
++
++   ```sh
++   ./scripts/termux-native/mobile-profile.sh --restore
++   ./scripts/termux-native/mobile-profile.sh --status
++   ```
++
++   Si el script detecta ediciones posteriores al perfil, no las pisa. Guarda la ruta de respaldo y resuelve la diferencia manualmente antes de reintentar; no borres el respaldo hasta comprobar preferencias.
++8. Reporta modelo del teléfono, versión Android, versión Termux, fuente/versión de Termux:X11, arquitectura, resultado de cada paso, incidencias/logs relevantes y capturas opcionales. Solo entonces ajustar tamaños/compatibilidad; no generalizar a todos los dispositivos Android.
++
++## Límites y camino heredado
++
++Termux ofrece paquetes nativos, no un Linux Desktop universal. El proyecto no promete que todas las apps Linux funcionen y no certifica una GPU ni aceleración. El navegador se externaliza deliberadamente a Android porque no hay un navegador GUI nativo de Termux verificado aquí. No se abre ningún puerto ni servicio remoto.
++
++El constructor Debian/QEMU permanece disponible solo manualmente. `make` a secas no construye imagen; usa `make legacy-image`, `make legacy-verify` y `make legacy-run` si trabajas conscientemente con esa compatibilidad. Detalles y limitaciones están en [`LEGACY_QEMU.md`](LEGACY_QEMU.md). Los archivos `packages/*.txt` son dependencias de la imagen Debian heredada, no instrucciones para instalar una distro dentro del Android.
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/legacy/baremetal/LEGACY.md MiniOS-termux-native-local/legacy/baremetal/LEGACY.md
+--- a/legacy/baremetal/LEGACY.md	2026-10-02 20:13:46.058881300 +0000
++++ b/legacy/baremetal/LEGACY.md	2026-10-02 20:54:37.801160520 +0000
+@@ -1,3 +1,3 @@
+ # Prototipo bare-metal archivado
+ 
+-Estos fuentes documentan el prototipo original MiniOS de 32 bits. Se conservan como referencia histórica en la transición autorizada a MiniAriño sobre Debian 13 amd64. No forman parte del constructor Linux, ni se compilan o ejecutan en la imagen nueva. El historial Git del repositorio también conserva el árbol anterior.
++Estos fuentes documentan el prototipo original MiniOS de 32 bits. Se conservan como referencia histórica y no forman parte del producto actual, que se prepara como escritorio nativo Termux + Termux:X11. No se compilan ni ejecutan en esa ruta. El historial Git del repositorio también conserva el árbol anterior.
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/packages/README.md MiniOS-termux-native-local/packages/README.md
+--- a/packages/README.md	1970-01-01 00:00:00.000000000 +0000
++++ b/packages/README.md	2026-10-02 20:54:43.069713225 +0000
+@@ -0,0 +1,3 @@
++# Dependencias de imagen heredada
++
++Los archivos `*.txt` de este directorio son listas Debian para el constructor de imagen QEMU antiguo. No son una receta para instalar una distro en Android ni intervienen en el escritorio nativo Termux. El instalador nativo usa únicamente los paquetes Termux que enumera y confirma en `scripts/termux-native/install.sh`.
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/packages/base.txt MiniOS-termux-native-local/packages/base.txt
+--- a/packages/base.txt	2026-10-02 20:13:46.062881200 +0000
++++ b/packages/base.txt	2026-10-02 20:54:43.057713224 +0000
+@@ -1,3 +1,4 @@
++# LEGACY ONLY: packages for the archived Debian/QEMU image builder; not Termux packages.
+ ca-certificates
+ console-setup
+ locales
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/packages/desktop.txt MiniOS-termux-native-local/packages/desktop.txt
+--- a/packages/desktop.txt	2026-10-02 20:13:46.062881200 +0000
++++ b/packages/desktop.txt	2026-10-02 20:54:43.061713224 +0000
+@@ -1,3 +1,4 @@
++# LEGACY ONLY: packages for the archived Debian/QEMU image builder; not Termux packages.
+ dbus-x11
+ lightdm
+ xfce4
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/packages/development.txt MiniOS-termux-native-local/packages/development.txt
+--- a/packages/development.txt	2026-10-02 20:13:46.062881200 +0000
++++ b/packages/development.txt	2026-10-02 20:54:43.061713224 +0000
+@@ -1,3 +1,4 @@
++# LEGACY ONLY: packages for the archived Debian/QEMU image builder; not Termux packages.
+ bash
+ build-essential
+ git
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/packages/network.txt MiniOS-termux-native-local/packages/network.txt
+--- a/packages/network.txt	2026-10-02 20:13:46.062881200 +0000
++++ b/packages/network.txt	2026-10-02 20:54:43.065713224 +0000
+@@ -1,3 +1,4 @@
++# LEGACY ONLY: packages for the archived Debian/QEMU image builder; not Termux packages.
+ network-manager
+ network-manager-gnome
+ nmap
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/run-termux.sh MiniOS-termux-native-local/run-termux.sh
+--- a/run-termux.sh	2026-10-02 20:13:46.062881200 +0000
++++ b/run-termux.sh	2026-10-02 20:54:48.593713496 +0000
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env bash
++# LEGACY Debian/QEMU path; not used by the native Termux desktop.
+ set -Eeuo pipefail
+ if [[ $# -lt 1 ]]; then
+   echo "Uso: ./run-termux.sh /ruta/miniarino-amd64.img[.gz]" >&2
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/build-image.sh MiniOS-termux-native-local/scripts/build-image.sh
+--- a/scripts/build-image.sh	2026-10-02 20:13:46.062881200 +0000
++++ b/scripts/build-image.sh	2026-10-02 20:54:48.593713496 +0000
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env bash
++# LEGACY Debian/QEMU path; not used by the native Termux desktop.
+ set -Eeuo pipefail
+ 
+ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/clean-build.sh MiniOS-termux-native-local/scripts/clean-build.sh
+--- a/scripts/clean-build.sh	2026-10-02 20:13:46.062881200 +0000
++++ b/scripts/clean-build.sh	2026-10-02 20:54:48.597713496 +0000
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env bash
++# LEGACY Debian/QEMU path; not used by the native Termux desktop.
+ set -Eeuo pipefail
+ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ # Never delete build/os.img here: the next successful build archives it first.
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/desktop-smoke-qemu.sh MiniOS-termux-native-local/scripts/desktop-smoke-qemu.sh
+--- a/scripts/desktop-smoke-qemu.sh	2026-10-02 20:13:46.062881200 +0000
++++ b/scripts/desktop-smoke-qemu.sh	2026-10-02 20:54:48.601713496 +0000
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env bash
++# LEGACY Debian/QEMU path; not used by the native Termux desktop.
+ set -Eeuo pipefail
+ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ IMG="${1:-$ROOT/build/os.img}"
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/miniarino-selftest.sh MiniOS-termux-native-local/scripts/miniarino-selftest.sh
+--- a/scripts/miniarino-selftest.sh	2026-10-02 20:13:46.062881200 +0000
++++ b/scripts/miniarino-selftest.sh	2026-10-02 20:54:48.601713496 +0000
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env bash
++# LEGACY Debian/QEMU path; not used by the native Termux desktop.
+ # Run as the logged-in, unprivileged user inside the XFCE desktop session.
+ set -uo pipefail
+ 
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/run-qemu.sh MiniOS-termux-native-local/scripts/run-qemu.sh
+--- a/scripts/run-qemu.sh	2026-10-02 20:13:46.062881200 +0000
++++ b/scripts/run-qemu.sh	2026-10-02 20:54:48.605713496 +0000
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env bash
++# LEGACY Debian/QEMU path; not used by the native Termux desktop.
+ set -Eeuo pipefail
+ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ IMG="${1:-$ROOT/build/os.img}"
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/smoke-qemu.sh MiniOS-termux-native-local/scripts/smoke-qemu.sh
+--- a/scripts/smoke-qemu.sh	2026-10-02 20:13:46.062881200 +0000
++++ b/scripts/smoke-qemu.sh	2026-10-02 20:54:48.605713496 +0000
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env bash
++# LEGACY Debian/QEMU path; not used by the native Termux desktop.
+ set -Eeuo pipefail
+ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ IMG="${1:-$ROOT/build/os.img}"
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/termux-native/browser-prompt.sh MiniOS-termux-native-local/scripts/termux-native/browser-prompt.sh
+--- a/scripts/termux-native/browser-prompt.sh	1970-01-01 00:00:00.000000000 +0000
++++ b/scripts/termux-native/browser-prompt.sh	2026-10-02 20:52:47.313045311 +0000
+@@ -0,0 +1,19 @@
++#!/usr/bin/env bash
++# Interactive browser handoff copied into the opt-in profile's private bin dir.
++set -Eeuo pipefail
++if [[ -z "${TERMUX_VERSION:-}" || -z "${PREFIX:-}" || ! -x "${PREFIX:-/nonexistent}/bin/pkg" ]]; then
++  printf 'MiniAriño: este acceso solo funciona dentro de Termux.\n' >&2
++  exit 2
++fi
++command -v termux-open-url >/dev/null 2>&1 || {
++  printf 'MiniAriño: termux-open-url no está disponible; abre el navegador Android manualmente.\n' >&2
++  exit 2
++}
++printf 'MiniAriño — navegador Android\nLa página se abrirá fuera de XFCE con el navegador elegido por Android.\nURL (http:// o https://): '
++IFS= read -r URL || { printf 'No se recibió una URL.\n' >&2; exit 2; }
++[[ "$URL" =~ ^https?://[^[:space:]]+$ ]] || {
++  printf 'URL no válida; usa http:// o https:// sin espacios.\n' >&2
++  exit 2
++}
++termux-open-url "$URL"
++printf 'URL entregada a Android.\n'
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/termux-native/browser.sh MiniOS-termux-native-local/scripts/termux-native/browser.sh
+--- a/scripts/termux-native/browser.sh	1970-01-01 00:00:00.000000000 +0000
++++ b/scripts/termux-native/browser.sh	2026-10-02 20:50:31.254991050 +0000
+@@ -0,0 +1,17 @@
++#!/usr/bin/env bash
++# Hand an HTTP(S) URL to Android's selected browser; no X11 browser is bundled.
++set -Eeuo pipefail
++SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
++# shellcheck source=scripts/termux-native/common.sh
++source "$SCRIPT_DIR/common.sh"
++if [[ "${1:-}" == -h || "${1:-}" == --help ]]; then
++  printf 'Uso: scripts/termux-native/browser.sh https://sitio.example\nEntrega una URL al navegador Android mediante termux-open-url; puede abrir fuera de XFCE. No instala ni configura navegadores.\n'
++  exit 0
++fi
++[[ $# -eq 1 ]] || native_die 'indica una URL http:// o https://.'
++URL="$1"
++[[ "$URL" =~ ^https?://[^[:space:]]+$ ]] || native_die 'solo se aceptan URLs http:// o https:// sin espacios.'
++native_require_termux
++command -v termux-open-url >/dev/null 2>&1 || native_die 'termux-open-url no está disponible; abre el navegador Android manualmente. No se instaló ningún navegador.'
++termux-open-url "$URL"
++printf 'URL entregada al navegador Android; puede abrir fuera de XFCE. No hay un navegador X11 de Termux verificado por este proyecto.\n'
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/termux-native/common.sh MiniOS-termux-native-local/scripts/termux-native/common.sh
+--- a/scripts/termux-native/common.sh	1970-01-01 00:00:00.000000000 +0000
++++ b/scripts/termux-native/common.sh	2026-10-02 20:20:25.429404500 +0000
+@@ -0,0 +1,107 @@
++#!/usr/bin/env bash
++# Shared, read-only checks and state helpers for the native Termux XFCE scaffold.
++set -Eeuo pipefail
++
++NATIVE_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
++NATIVE_REPO_ROOT="$(cd -- "$NATIVE_SCRIPT_DIR/../.." && pwd)"
++
++native_die() {
++  printf 'MiniOS Termux XFCE: %s\n' "$*" >&2
++  exit 2
++}
++
++native_require_termux() {
++  if [[ -z "${TERMUX_VERSION:-}" || -z "${PREFIX:-}" || ! -d "${PREFIX:-/nonexistent}" || ! -x "${PREFIX:-/nonexistent}/bin/pkg" ]]; then
++    native_die 'este comando solo se puede usar desde Termux (se requieren TERMUX_VERSION, PREFIX y pkg). No se modificó ningún paquete.'
++  fi
++}
++
++native_validate_display() {
++  local display="${1:-:1}"
++  [[ "$display" =~ ^:[0-9]{1,2}$ ]] || native_die 'display no válido; usa :1, :2, etc. (MINIOS_X11_DISPLAY).'
++  printf '%s' "$display"
++}
++
++native_state_dir() {
++  printf '%s/var/run/minios-native-xfce' "$PREFIX"
++}
++
++native_ensure_state_dir() {
++  local dir
++  dir="$(native_state_dir)"
++  [[ ! -L "$dir" ]] || native_die "la ruta de estado es un enlace simbólico; revísala manualmente: $dir"
++  mkdir -p -- "$dir"
++  chmod 700 -- "$dir"
++  printf '%s' "$dir"
++}
++
++native_meta_is_safe() {
++  local dir="$1"
++  [[ ! -L "$dir/session.pid" && ! -L "$dir/session.token" && -f "$dir/session.pid" && -f "$dir/session.token" ]]
++}
++
++native_read_meta() {
++  local dir="$1"
++  NATIVE_PID=''
++  NATIVE_TOKEN=''
++  native_meta_is_safe "$dir" || return 1
++  IFS= read -r NATIVE_PID < "$dir/session.pid" || return 1
++  IFS= read -r NATIVE_TOKEN < "$dir/session.token" || return 1
++  [[ "$NATIVE_PID" =~ ^[0-9]{1,10}$ && "$NATIVE_PID" -gt 1 ]] || return 1
++  [[ "$NATIVE_TOKEN" =~ ^[A-Za-z0-9._-]{1,128}$ ]] || return 1
++}
++
++native_pid_has_token() {
++  local pid="$1" token="$2"
++  [[ "$pid" =~ ^[0-9]{1,10}$ && "$pid" -gt 1 && -r "/proc/$pid/environ" ]] || return 1
++  grep -aFq -- "MINIOS_NATIVE_SESSION_TOKEN=$token" "/proc/$pid/environ" 2>/dev/null
++}
++
++native_active_session() {
++  local dir="$1"
++  native_read_meta "$dir" || return 1
++  kill -0 "$NATIVE_PID" 2>/dev/null && native_pid_has_token "$NATIVE_PID" "$NATIVE_TOKEN"
++}
++
++native_remove_meta() {
++  local dir="$1" name
++  # Only unlink regular metadata files, never follow or remove symlinks.
++  for name in session.pid session.token session.ready x11.pid desktop.pid; do
++    [[ ! -L "$dir/$name" && -f "$dir/$name" ]] && rm -f -- "$dir/$name"
++  done
++}
++
++native_stop_children_for_token() {
++  local dir="$1" token="$2" name pid
++  for name in x11.pid desktop.pid; do
++    [[ ! -L "$dir/$name" && -f "$dir/$name" ]] || continue
++    IFS= read -r pid < "$dir/$name" || continue
++    [[ "$pid" =~ ^[0-9]{1,10}$ && "$pid" -gt 1 ]] || continue
++    native_stop_child_if_owned "$pid" "$token"
++  done
++}
++
++native_remove_meta_if_owner() {
++  local dir="$1" pid="$2" token="$3"
++  if native_read_meta "$dir" && [[ "$NATIVE_PID" == "$pid" && "$NATIVE_TOKEN" == "$token" ]]; then
++    native_remove_meta "$dir"
++  fi
++}
++
++native_stop_child_if_owned() {
++  local pid="${1:-}" token="${2:-}"
++  [[ "$pid" =~ ^[0-9]{1,10}$ && "$pid" -gt 1 ]] || return 0
++  if kill -0 "$pid" 2>/dev/null && native_pid_has_token "$pid" "$token"; then
++    kill -TERM "$pid" 2>/dev/null || true
++    local n
++    for n in 1 2 3 4 5; do
++      kill -0 "$pid" 2>/dev/null || return 0
++      native_pid_has_token "$pid" "$token" || return 0
++      sleep 1
++    done
++    # Escalate only if the same process still carries this session's token.
++    if kill -0 "$pid" 2>/dev/null && native_pid_has_token "$pid" "$token"; then
++      kill -KILL "$pid" 2>/dev/null || true
++    fi
++  fi
++}
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/termux-native/doctor.sh MiniOS-termux-native-local/scripts/termux-native/doctor.sh
+--- a/scripts/termux-native/doctor.sh	1970-01-01 00:00:00.000000000 +0000
++++ b/scripts/termux-native/doctor.sh	2026-10-02 20:51:25.291307883 +0000
+@@ -0,0 +1,61 @@
++#!/usr/bin/env bash
++# Read-only diagnostics. Never invokes pkg, creates files, or changes Xfce settings.
++set -Eeuo pipefail
++SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
++# shellcheck source=scripts/termux-native/common.sh
++source "$SCRIPT_DIR/common.sh"
++[[ $# -eq 0 ]] || native_die 'doctor.sh no acepta argumentos.'
++native_require_termux
++
++printf 'MiniAriño Termux/XFCE doctor (solo lectura)\n'
++printf 'Termux: %s\nArquitectura: %s\nPREFIX: %s\n' "$TERMUX_VERSION" "$(uname -m)" "$PREFIX"
++failures=0
++for item in termux-x11 xfce4-session xfce4-panel dbus-launch thunar xfce4-terminal; do
++  if command -v "$item" >/dev/null 2>&1; then
++    printf 'OK      %s -> %s\n' "$item" "$(command -v "$item")"
++  else
++    printf 'FALTA   %s\n' "$item"
++    failures=$((failures + 1))
++  fi
++done
++
++if command -v termux-open-url >/dev/null 2>&1; then
++  printf 'NAVEGADOR: el acceso MiniAriño puede entregar URLs al navegador elegido por Android (puede abrir fuera de XFCE).\n'
++else
++  printf 'AVISO   termux-open-url no está disponible; abre el navegador Android manualmente. No se detectó ni instala un navegador X11.\n'
++fi
++
++if [[ -d "$HOME/storage/shared" ]]; then
++  printf 'Almacenamiento Android: existe %s (la accesibilidad depende de permisos Android).\n' "$HOME/storage/shared"
++else
++  printf 'Almacenamiento Android: no enlazado. Si hace falta, ejecuta termux-setup-storage manualmente y acepta el permiso Android.\n'
++fi
++
++PROFILE_MARKER="$HOME/.config/miniarino-native/profile.enabled"
++if [[ -L "$PROFILE_MARKER" ]]; then
++  printf 'FALTA   el marcador del perfil móvil es un enlace simbólico; revísalo manualmente.\n'
++  failures=$((failures + 1))
++elif [[ -f "$PROFILE_MARKER" ]] && grep -Fxq 'mobile-v1' "$PROFILE_MARKER"; then
++  printf 'PERFIL  MiniAriño móvil opt-in activo; configuración aislada en ~/.config/miniarino-native (requiere probarse visualmente).\n'
++else
++  printf 'PERFIL  inactivo; la configuración XFCE existente no se modifica.\n'
++fi
++
++STATE_DIR="$(native_state_dir)"
++if [[ -L "$STATE_DIR" ]]; then
++  printf 'FALTA   directorio de estado es un enlace simbólico; no se accederá.\n'
++  failures=$((failures + 1))
++elif native_active_session "$STATE_DIR"; then
++  printf 'SESIÓN  activa: PID %s, display según inicio (log %s/session.log).\n' "$NATIVE_PID" "$STATE_DIR"
++else
++  printf 'SESIÓN  detenida o sin registrar.\n'
++fi
++
++printf 'DISPLAY predeterminado: %s (puede cambiarse con MINIOS_X11_DISPLAY).\n' "${MINIOS_X11_DISPLAY:-:1}"
++printf 'Termux:X11 requiere también la app Android instalada y abierta; solo se comprueba el comando compañero.\n'
++printf 'Termux:X11 es local al dispositivo: MiniAriño no configura VNC/RDP ni expone un escritorio por Internet.\n'
++if ((failures)); then
++  printf 'Resultado: faltan %s comprobaciones requeridas. Usa install.sh --check; no se instalaron paquetes.\n' "$failures"
++  exit 1
++fi
++printf 'Resultado: comandos requeridos presentes. Aún faltan las pruebas visuales y de interacción en el teléfono.\n'
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/termux-native/install.sh MiniOS-termux-native-local/scripts/termux-native/install.sh
+--- a/scripts/termux-native/install.sh	1970-01-01 00:00:00.000000000 +0000
++++ b/scripts/termux-native/install.sh	2026-10-02 20:51:32.647308244 +0000
+@@ -0,0 +1,66 @@
++#!/usr/bin/env bash
++# Explicit, repeatable setup for the Termux:X11 companion package + native XFCE.
++set -Eeuo pipefail
++SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
++# shellcheck source=scripts/termux-native/common.sh
++source "$SCRIPT_DIR/common.sh"
++
++usage() {
++  cat <<'EOF'
++Uso:
++  scripts/termux-native/install.sh --check    # solo inspecciona; no instala
++  scripts/termux-native/install.sh --install  # solicita confirmación e instala
++
++Requiere que la aplicación Android Termux:X11 ya esté instalada. Este script
++no descarga ni instala APKs y no modifica la configuración del escritorio.
++EOF
++}
++
++MODE="${1:---check}"
++case "$MODE" in
++  --check|--install) ;;
++  -h|--help) usage; exit 0 ;;
++  *) usage >&2; exit 2 ;;
++esac
++[[ $# -le 1 ]] || { usage >&2; exit 2; }
++native_require_termux
++
++missing=()
++for item in termux-x11 xfce4-session xfce4-panel dbus-launch thunar xfce4-terminal; do
++  command -v "$item" >/dev/null 2>&1 || missing+=("$item")
++done
++if ((${#missing[@]} == 0)); then
++  printf 'Herramientas requeridas encontradas: termux-x11, XFCE, D-Bus, Thunar y terminal.\n'
++else
++  printf 'Herramientas por instalar o revisar: %s\n' "${missing[*]}"
++fi
++
++if [[ "$MODE" == --check ]]; then
++  cat <<'EOF'
++Modo --check: no se ejecutó pkg ni se cambió ningún archivo.
++Para instalar explícitamente el paquete nativo xfce y el compañero Termux:X11:
++  scripts/termux-native/install.sh --install
++EOF
++  exit 0
++fi
++
++cat <<'EOF'
++Esta acción opt-in añadirá el repositorio oficial x11-repo de Termux (necesario
++para Termux:X11) y solicitará a pkg instalar los paquetes seleccionados
++termux-x11-nightly y xfce. No se añade TUR ni otro repositorio de terceros.
++No se ejecuta pkg upgrade, no se eliminan paquetes, no se instala ningún APK y
++no se cambian archivos de configuración personales.
++EOF
++if ! IFS= read -r -p '¿Continuar? [y/N] ' answer; then
++  printf 'Cancelado; no se instaló ningún paquete.\n'
++  exit 0
++fi
++case "$answer" in
++  y|Y|yes|YES|s|S|si|SI|sí|Sí) ;;
++  *) printf 'Cancelado; no se instaló ningún paquete.\n'; exit 0 ;;
++esac
++
++"$PREFIX/bin/pkg" install x11-repo
++"$PREFIX/bin/pkg" install termux-x11-nightly xfce
++
++printf '\nInstalación solicitada. Ejecuta doctor.sh para comprobar comandos y abre la aplicación Termux:X11 antes de start.sh.\n'
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/termux-native/mobile-profile.sh MiniOS-termux-native-local/scripts/termux-native/mobile-profile.sh
+--- a/scripts/termux-native/mobile-profile.sh	1970-01-01 00:00:00.000000000 +0000
++++ b/scripts/termux-native/mobile-profile.sh	2026-10-02 20:56:31.512890586 +0000
+@@ -0,0 +1,317 @@
++#!/usr/bin/env bash
++# Opt-in, reversible MiniAriño panel/menu profile isolated from ~/.config/xfce4.
++set -Eeuo pipefail
++SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
++# shellcheck source=scripts/termux-native/common.sh
++source "$SCRIPT_DIR/common.sh"
++
++usage() {
++  cat <<'EOF'
++Uso:
++  scripts/termux-native/mobile-profile.sh --status   # solo lectura
++  scripts/termux-native/mobile-profile.sh --apply    # copia de seguridad + confirmación
++  scripts/termux-native/mobile-profile.sh --restore  # revierte solo archivos sin cambios
++
++El perfil es opt-in. XFCE lo carga desde XDG_CONFIG_HOME y XDG_DATA_HOME privados;
++no modifica ~/.config/xfce4 ni ~/Desktop. Añade un panel con menú y accesos grandes
++para terminal, archivos y entrega de URL al navegador Android. La compatibilidad
++visual/táctil y la ubicación del panel deben verificarse en el teléfono.
++EOF
++}
++MODE="${1:-}"
++case "$MODE" in
++  --status|--apply|--restore) ;;
++  -h|--help) usage; exit 0 ;;
++  *) usage >&2; exit 2 ;;
++esac
++[[ $# -eq 1 ]] || { usage >&2; exit 2; }
++native_require_termux
++
++CONFIG_ROOT="$HOME/.config/miniarino-native"
++DATA_ROOT="$HOME/.local/share/miniarino-native"
++BACKUP_ROOT="$HOME/.local/share/miniarino-native-backups"
++PANEL_REL='config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml'
++TERMINAL_REL='data/applications/miniarino-terminal.desktop'
++FILES_REL='data/applications/miniarino-files.desktop'
++BROWSER_REL='data/applications/miniarino-browser-handoff.desktop'
++HELPER_REL='data/bin/miniarino-browser-prompt'
++REL_PATHS=("$PANEL_REL" "$TERMINAL_REL" "$FILES_REL" "$BROWSER_REL" "$HELPER_REL")
++MANIFEST="$CONFIG_ROOT/profile.manifest"
++ENABLED="$CONFIG_ROOT/profile.enabled"
++
++path_for() {
++  case "$1" in
++    config/*) printf '%s/%s' "$HOME/.config/miniarino-native" "${1#config/}" ;;
++    data/*) printf '%s/%s' "$HOME/.local/share/miniarino-native" "${1#data/}" ;;
++    *) native_die "ruta de perfil interna no permitida: $1" ;;
++  esac
++}
++
++check_no_symlink() {
++  local path="$1"
++  [[ ! -L "$path" ]] || native_die "ruta de perfil es un enlace simbólico; no se modificó: $path"
++  [[ ! -e "$path" || -d "$path" ]] || native_die "se esperaba un directorio, no se modificó: $path"
++}
++
++check_parent_chain() {
++  local path="$1" parent
++  parent="$(dirname -- "$path")"
++  while [[ "$parent" != "$HOME" && "$parent" != / ]]; do
++    [[ ! -L "$parent" ]] || native_die "directorio padre es un enlace simbólico; no se modificó: $parent"
++    parent="$(dirname -- "$parent")"
++  done
++}
++
++ensure_dirs() {
++  local rel path parent
++  umask 077
++  for path in "$HOME/.config" "$HOME/.config/miniarino-native" \
++              "$HOME/.local" "$HOME/.local/share" "$HOME/.local/share/miniarino-native" \
++              "$BACKUP_ROOT"; do
++    check_parent_chain "$path"
++    check_no_symlink "$path"
++    mkdir -p -- "$path"
++    check_no_symlink "$path"
++  done
++  for rel in "$PANEL_REL" "$TERMINAL_REL" "$FILES_REL" "$BROWSER_REL" "$HELPER_REL"; do
++    path="$(path_for "$rel")"
++    parent="$(dirname -- "$path")"
++    check_parent_chain "$parent"
++    check_no_symlink "$parent"
++    mkdir -p -- "$parent"
++    check_no_symlink "$parent"
++  done
++}
++
++profile_active() {
++  [[ ! -L "$ENABLED" ]] || native_die "marcador de perfil es un enlace simbólico; revísalo: $ENABLED"
++  [[ ! -e "$ENABLED" || -f "$ENABLED" ]] || native_die "marcador de perfil no es un archivo regular: $ENABLED"
++  if [[ -f "$ENABLED" ]]; then
++    grep -Fxq 'mobile-v1' "$ENABLED" || native_die "marcador de perfil no reconocido: $ENABLED"
++    return 0
++  fi
++  return 1
++}
++
++session_must_be_stopped() {
++  local state_dir
++  state_dir="$(native_state_dir)"
++  [[ ! -L "$state_dir" ]] || native_die "directorio de estado es un enlace simbólico: $state_dir"
++  if [[ -d "$state_dir" ]] && native_active_session "$state_dir"; then
++    native_die 'detén primero la sesión MiniAriño con scripts/termux-native/stop.sh.'
++  fi
++}
++
++if [[ "$MODE" == --status ]]; then
++  if profile_active; then
++    printf 'Perfil MiniAriño móvil activo; configuración aislada en %s.\n' "$CONFIG_ROOT"
++  elif [[ -f "$MANIFEST" ]]; then
++    printf 'Hay una aplicación de perfil incompleta o pendiente de revertir. Revisa el respaldo y ejecuta --restore.\n'
++    exit 1
++  else
++    printf 'Perfil MiniAriño móvil inactivo; no se modificó ~/.config/xfce4.\n'
++  fi
++  exit 0
++fi
++
++session_must_be_stopped
++ensure_dirs
++
++if [[ "$MODE" == --apply ]]; then
++  if profile_active || [[ -e "$MANIFEST" || -L "$MANIFEST" ]]; then
++    native_die 'ya hay un perfil activo o una aplicación parcial; revisa el estado y ejecuta --restore antes de volver a aplicar.'
++  fi
++  printf 'Se creará un panel XFCE experimental con menú MiniAriño y accesos a Terminal, Archivos y navegador Android.\n'
++  printf 'Solo se tocarán archivos de configuración/datos propios del perfil, con copia previa; no se instalarán paquetes.\n'
++  if ! IFS= read -r -p '¿Aplicar el perfil móvil? [y/N] ' answer; then
++    printf 'Cancelado; no se cambió el perfil.\n'
++    exit 0
++  fi
++  case "$answer" in y|Y|yes|YES|s|S|si|SI|sí|Sí) ;; *) printf 'Cancelado; no se cambió el perfil.\n'; exit 0 ;; esac
++
++  backup_id="$(date +%Y%m%dT%H%M%S)-$$"
++  backup="$BACKUP_ROOT/$backup_id"
++  [[ ! -e "$backup" && ! -L "$backup" ]] || native_die "el respaldo ya existe: $backup"
++  mkdir -m 700 -- "$backup"
++  mkdir -m 700 -- "$backup/original" "$backup/generated"
++  for rel in "${REL_PATHS[@]}"; do
++    mkdir -p -- "$backup/generated/$(dirname -- "$rel")"
++  done
++  : > "$backup/manifest"
++  chmod 600 "$backup/manifest"
++
++  for rel in "${REL_PATHS[@]}"; do
++    target="$(path_for "$rel")"
++    [[ ! -L "$target" ]] || native_die "el archivo destino es un enlace simbólico; no se modificó: $target"
++    if [[ -e "$target" ]]; then
++      [[ -f "$target" ]] || native_die "el destino ya existe y no es un archivo regular: $target"
++      mkdir -p -- "$backup/original/$(dirname -- "$rel")"
++      cp -p -- "$target" "$backup/original/$rel"
++      printf 'EXISTS\t%s\n' "$rel" >> "$backup/manifest"
++    else
++      printf 'ABSENT\t%s\n' "$rel" >> "$backup/manifest"
++    fi
++  done
++
++  cat > "$backup/generated/$PANEL_REL" <<'EOF'
++<?xml version="1.0" encoding="UTF-8"?>
++<channel name="xfce4-panel" version="1.0">
++  <property name="configver" type="int" value="2"/>
++  <property name="panels" type="array">
++    <value type="int" value="1"/>
++    <property name="panel-1" type="empty">
++      <property name="position" type="string" value="p=10;x=0;y=0"/>
++      <property name="length" type="uint" value="100"/>
++      <property name="position-locked" type="bool" value="true"/>
++      <property name="icon-size" type="uint" value="40"/>
++      <property name="size" type="uint" value="56"/>
++      <property name="plugin-ids" type="array">
++        <value type="int" value="1"/><value type="int" value="2"/>
++        <value type="int" value="3"/><value type="int" value="4"/>
++        <value type="int" value="5"/><value type="int" value="6"/>
++        <value type="int" value="7"/>
++      </property>
++    </property>
++  </property>
++  <property name="plugins" type="empty">
++    <property name="plugin-1" type="string" value="applicationsmenu">
++      <property name="show-button-title" type="bool" value="true"/>
++      <property name="button-title" type="string" value="MiniAriño"/>
++    </property>
++    <property name="plugin-2" type="string" value="tasklist"/>
++    <property name="plugin-3" type="string" value="separator">
++      <property name="expand" type="bool" value="true"/>
++      <property name="style" type="uint" value="0"/>
++    </property>
++    <property name="plugin-4" type="string" value="launcher">
++      <property name="items" type="array"><value type="string" value="miniarino-terminal.desktop"/></property>
++    </property>
++    <property name="plugin-5" type="string" value="launcher">
++      <property name="items" type="array"><value type="string" value="miniarino-files.desktop"/></property>
++    </property>
++    <property name="plugin-6" type="string" value="launcher">
++      <property name="items" type="array"><value type="string" value="miniarino-browser-handoff.desktop"/></property>
++    </property>
++    <property name="plugin-7" type="string" value="clock"/>
++  </property>
++</channel>
++EOF
++  cat > "$backup/generated/$TERMINAL_REL" <<'EOF'
++[Desktop Entry]
++Version=1.0
++Type=Application
++Name=MiniAriño — Terminal
++Comment=Abrir el terminal nativo de Termux dentro de XFCE
++Exec=xfce4-terminal
++Icon=utilities-terminal
++Terminal=false
++Categories=System;TerminalEmulator;
++StartupNotify=true
++EOF
++  cat > "$backup/generated/$FILES_REL" <<'EOF'
++[Desktop Entry]
++Version=1.0
++Type=Application
++Name=MiniAriño — Archivos
++Comment=Abrir Thunar en el almacenamiento disponible para Termux
++Exec=thunar
++Icon=system-file-manager
++Terminal=false
++Categories=Utility;FileManager;
++StartupNotify=true
++EOF
++  cat > "$backup/generated/$BROWSER_REL" <<'EOF'
++[Desktop Entry]
++Version=1.0
++Type=Application
++Name=MiniAriño — Navegador Android
++Comment=Entregar una URL al navegador seleccionado por Android (fuera de XFCE)
++Exec=xfce4-terminal --execute miniarino-browser-prompt
++Icon=web-browser
++Terminal=false
++Categories=Network;WebBrowser;
++StartupNotify=true
++EOF
++  cp -- "$SCRIPT_DIR/browser-prompt.sh" "$backup/generated/$HELPER_REL"
++  chmod 755 "$backup/generated/$HELPER_REL"
++  chmod 644 "$backup/generated/$PANEL_REL" "$backup/generated/$TERMINAL_REL" \
++    "$backup/generated/$FILES_REL" "$backup/generated/$BROWSER_REL"
++  printf 'backup_id=%s\n' "$backup_id" > "$MANIFEST.tmp.$$"
++  chmod 600 "$MANIFEST.tmp.$$"
++  mv -- "$MANIFEST.tmp.$$" "$MANIFEST"
++
++  for rel in "${REL_PATHS[@]}"; do
++    target="$(path_for "$rel")"
++    temp="$target.tmp.$$"
++    cp -- "$backup/generated/$rel" "$temp"
++    if [[ "$rel" == "$HELPER_REL" ]]; then chmod 755 "$temp"; else chmod 644 "$temp"; fi
++    mv -f -- "$temp" "$target"
++  done
++  printf 'mobile-v1\n' > "$ENABLED.tmp.$$"
++  chmod 600 "$ENABLED.tmp.$$"
++  mv -- "$ENABLED.tmp.$$" "$ENABLED"
++  printf 'Perfil aplicado. Copia de seguridad: %s\n' "$backup"
++  printf 'La ubicación/panel, resolución, orientación, teclado, toque y reanudación deben probarse en Android.\n'
++  exit 0
++fi
++
++# --restore: refuse conflicts instead of silently overwriting settings edited
++# after profile activation. The backup remains available until the user decides.
++[[ -f "$MANIFEST" && ! -L "$MANIFEST" ]] || native_die 'no se encontró un manifiesto de perfil válido; no se revirtió ningún archivo.'
++IFS= read -r manifest_line < "$MANIFEST" || native_die 'manifiesto vacío; no se revirtió ningún archivo.'
++[[ "$manifest_line" =~ ^backup_id=([0-9]{8}T[0-9]{6}-[0-9]+)$ ]] || native_die 'manifiesto no válido; no se revirtió ningún archivo.'
++backup_id="${BASH_REMATCH[1]}"
++backup="$BACKUP_ROOT/$backup_id"
++[[ ! -L "$backup" && -d "$backup" && ! -L "$backup/manifest" && -f "$backup/manifest" ]] || native_die 'copia de seguridad ausente o insegura; no se revirtió ningún archivo.'
++check_parent_chain "$backup/manifest"
++[[ ! -L "$ENABLED" && ( ! -e "$ENABLED" || -f "$ENABLED" ) ]] || native_die 'marcador de perfil inseguro; no se revirtió ningún archivo.'
++if [[ -f "$ENABLED" ]]; then
++  grep -Fxq 'mobile-v1' "$ENABLED" || native_die 'marcador de perfil cambió; no se revirtió ningún archivo.'
++fi
++
++declare -A BACKUP_STATES=()
++while IFS=$'\t' read -r kind rel; do
++  [[ "$kind" == EXISTS || "$kind" == ABSENT ]] || native_die 'manifiesto de respaldo dañado; no se revirtió ningún archivo.'
++  allowed=0
++  for known in "${REL_PATHS[@]}"; do [[ "$rel" == "$known" ]] && allowed=1; done
++  ((allowed)) || native_die 'manifiesto contiene una ruta desconocida; no se revirtió ningún archivo.'
++  [[ -z "${BACKUP_STATES[$rel]:-}" ]] || native_die 'manifiesto contiene destinos duplicados; no se revirtió ningún archivo.'
++  BACKUP_STATES[$rel]="$kind"
++  if [[ "$kind" == EXISTS ]]; then
++    original="$backup/original/$rel"
++    check_parent_chain "$original"
++    [[ -f "$original" && ! -L "$original" ]] || native_die "no está la copia previa de $rel; no se revirtió ningún archivo."
++  fi
++done < "$backup/manifest"
++for rel in "${REL_PATHS[@]}"; do
++  target="$(path_for "$rel")"
++  generated="$backup/generated/$rel"
++  check_parent_chain "$generated"
++  [[ -n "${BACKUP_STATES[$rel]:-}" ]] || native_die "falta una entrada de respaldo para $rel; no se revirtió ningún archivo."
++  [[ ! -L "$target" && -f "$target" && -f "$generated" && ! -L "$generated" ]] || native_die "estado incompleto o inseguro; no se revirtió ningún archivo: $target"
++  cmp -s -- "$target" "$backup/generated/$rel" || native_die "el perfil cambió desde que se aplicó; no se sobreescribió $target. La copia sigue en $backup"
++done
++printf 'Se restaurarán únicamente los archivos gestionados que siguen idénticos al perfil instalado.\n'
++if ! IFS= read -r -p '¿Restaurar la copia anterior y quitar el perfil? [y/N] ' answer; then
++  printf 'Cancelado; no se cambió el perfil.\n'
++  exit 0
++fi
++case "$answer" in y|Y|yes|YES|s|S|si|SI|sí|Sí) ;; *) printf 'Cancelado; no se cambió el perfil.\n'; exit 0 ;; esac
++
++for rel in "${REL_PATHS[@]}"; do
++  target="$(path_for "$rel")"
++  if [[ "${BACKUP_STATES[$rel]}" == EXISTS ]]; then
++    original="$backup/original/$rel"
++    temp="$target.restore.$$"
++    cp -p -- "$original" "$temp"
++    mv -f -- "$temp" "$target"
++  else
++    rm -- "$target"
++  fi
++done
++[[ ! -L "$ENABLED" ]] || native_die 'marcador de perfil inseguro; archivos restaurados, pero queda por revisar el marcador.'
++[[ ! -e "$ENABLED" ]] || rm -- "$ENABLED"
++[[ ! -L "$MANIFEST" ]] || native_die 'manifiesto de perfil inseguro; archivos restaurados, pero queda por revisar el manifiesto.'
++rm -- "$MANIFEST"
++printf 'Perfil revertido. Respaldo conservado en %s\n' "$backup"
++printf 'Vuelve a iniciar XFCE para que el entorno aislado deje de estar en uso.\n'
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/termux-native/session.sh MiniOS-termux-native-local/scripts/termux-native/session.sh
+--- a/scripts/termux-native/session.sh	1970-01-01 00:00:00.000000000 +0000
++++ b/scripts/termux-native/session.sh	2026-10-02 20:56:01.751462094 +0000
+@@ -0,0 +1,85 @@
++#!/usr/bin/env bash
++# Internal supervisor started by start.sh. It owns only its X11/desktop children.
++set -Eeuo pipefail
++
++SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
++# shellcheck source=scripts/termux-native/common.sh
++source "$SCRIPT_DIR/common.sh"
++native_require_termux
++
++# The mobile profile is opt-in and kept in dedicated XDG directories. Without
++# its explicit marker, start XFCE with Termux's normal user configuration.
++PROFILE_MARKER="$HOME/.config/miniarino-native/profile.enabled"
++if [[ -L "$PROFILE_MARKER" ]]; then
++  native_die "marcador de perfil es un enlace simbólico; revísalo: $PROFILE_MARKER"
++elif [[ -f "$PROFILE_MARKER" ]]; then
++  grep -Fxq 'mobile-v1' "$PROFILE_MARKER" || native_die 'marcador de perfil no reconocido.'
++  CONFIG_ROOT="$HOME/.config/miniarino-native"
++  DATA_ROOT="$HOME/.local/share/miniarino-native"
++  [[ ! -L "$CONFIG_ROOT" && ! -L "$DATA_ROOT" && -d "$CONFIG_ROOT" && -d "$DATA_ROOT" ]] || native_die 'directorios del perfil móvil ausentes o inseguros.'
++  export XDG_CONFIG_HOME="$CONFIG_ROOT"
++  export XDG_DATA_HOME="$DATA_ROOT"
++  export XDG_DATA_DIRS="$DATA_ROOT:$PREFIX/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
++  export XDG_CONFIG_DIRS="$PREFIX/etc/xdg:${XDG_CONFIG_DIRS:-/etc/xdg}"
++  export PATH="$DATA_ROOT/bin:$PATH"
++fi
++
++DISPLAY_ID="$(native_validate_display "${1:-:1}")"
++STATE_DIR="${2:-$(native_ensure_state_dir)}"
++TOKEN="${MINIOS_NATIVE_SESSION_TOKEN:-}"
++[[ "$TOKEN" =~ ^[A-Za-z0-9._-]{1,128}$ ]] || native_die 'token interno de sesión no válido.'
++[[ ! -L "$STATE_DIR" && -d "$STATE_DIR" ]] || native_die 'directorio de estado ausente o inseguro.'
++
++X11_PID=''
++DESKTOP_PID=''
++cleanup() {
++  local status=$?
++  trap - EXIT INT TERM HUP
++  native_stop_child_if_owned "$DESKTOP_PID" "$TOKEN"
++  native_stop_child_if_owned "$X11_PID" "$TOKEN"
++  [[ ! -L "$STATE_DIR/session.ready" && -f "$STATE_DIR/session.ready" ]] && rm -f -- "$STATE_DIR/session.ready"
++  native_remove_meta_if_owner "$STATE_DIR" "$$" "$TOKEN"
++  exit "$status"
++}
++trap cleanup EXIT
++trap 'exit 130' INT
++trap 'exit 143' TERM HUP
++
++umask 077
++printf '%s\n' "$TOKEN" > "$STATE_DIR/session.token.tmp.$$"
++mv -f -- "$STATE_DIR/session.token.tmp.$$" "$STATE_DIR/session.token"
++printf '%s\n' "$$" > "$STATE_DIR/session.pid.tmp.$$"
++mv -f -- "$STATE_DIR/session.pid.tmp.$$" "$STATE_DIR/session.pid"
++
++LOG_FILE="$STATE_DIR/session.log"
++: >> "$LOG_FILE"
++chmod 600 -- "$LOG_FILE"
++write_child_pid() {
++  local name="$1" pid="$2"
++  printf '%s\n' "$pid" > "$STATE_DIR/$name.tmp.$$"
++  mv -f -- "$STATE_DIR/$name.tmp.$$" "$STATE_DIR/$name"
++}
++
++# Official Termux:X11 flow: start its local X server, then attach an XFCE
++# session on the same display using dbus-launch --exit-with-session.
++X11_ARGS=("$DISPLAY_ID")
++if [[ -n "${MINIOS_X11_DPI:-}" ]]; then
++  [[ "${MINIOS_X11_DPI}" =~ ^([7-9][0-9]|[1-3][0-9]{2}|400)$ ]] || native_die 'MINIOS_X11_DPI debe ser un número entre 70 y 400.'
++  X11_ARGS+=(-dpi "$MINIOS_X11_DPI")
++fi
++termux-x11 "${X11_ARGS[@]}" >> "$LOG_FILE" 2>&1 &
++X11_PID=$!
++write_child_pid x11.pid "$X11_PID"
++sleep 1
++if ! kill -0 "$X11_PID" 2>/dev/null; then
++  printf 'No se pudo mantener termux-x11; revisa %s\n' "$LOG_FILE" >&2
++  exit 1
++fi
++
++printf '%s\n' "$TOKEN" > "$STATE_DIR/session.ready.tmp.$$"
++mv -f -- "$STATE_DIR/session.ready.tmp.$$" "$STATE_DIR/session.ready"
++
++DISPLAY="$DISPLAY_ID" dbus-launch --exit-with-session xfce4-session >> "$LOG_FILE" 2>&1 &
++DESKTOP_PID=$!
++write_child_pid desktop.pid "$DESKTOP_PID"
++wait "$DESKTOP_PID"
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/termux-native/start.sh MiniOS-termux-native-local/scripts/termux-native/start.sh
+--- a/scripts/termux-native/start.sh	1970-01-01 00:00:00.000000000 +0000
++++ b/scripts/termux-native/start.sh	2026-10-02 20:51:36.827719823 +0000
+@@ -0,0 +1,95 @@
++#!/usr/bin/env bash
++# Start one owned Termux:X11 + XFCE session on display :1 by default.
++set -Eeuo pipefail
++SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
++# shellcheck source=scripts/termux-native/common.sh
++source "$SCRIPT_DIR/common.sh"
++
++usage() {
++  cat <<'EOF'
++Uso: scripts/termux-native/start.sh
++Opciones de entorno: MINIOS_X11_DISPLAY=:1 (o :2...), MINIOS_X11_DPI=120 (opcional).
++Inicia Termux:X11 en el dispositivo local y XFCE nativo de Termux; no usa QEMU,
++PRoot ni una distribución Linux. No habilita un servidor remoto.
++EOF
++}
++[[ $# -eq 0 ]] || { usage >&2; exit 2; }
++native_require_termux
++DISPLAY_ID="$(native_validate_display "${MINIOS_X11_DISPLAY:-:1}")"
++if [[ -n "${MINIOS_X11_DPI:-}" && ! "${MINIOS_X11_DPI}" =~ ^[7-9][0-9]$|^[1-3][0-9]{2}$|^400$ ]]; then
++  native_die 'MINIOS_X11_DPI debe ser un número entre 70 y 400.'
++fi
++
++missing=()
++for item in termux-x11 dbus-launch xfce4-session xfce4-panel; do
++  command -v "$item" >/dev/null 2>&1 || missing+=("$item")
++done
++if ((${#missing[@]})); then
++  printf 'Faltan comandos: %s\nEjecuta scripts/termux-native/install.sh --check y, si procede, --install.\n' "${missing[*]}" >&2
++  exit 1
++fi
++
++STATE_DIR="$(native_ensure_state_dir)"
++if native_active_session "$STATE_DIR"; then
++  printf 'La sesión MiniOS XFCE ya está activa (display %s, controlador PID %s).\n' "$DISPLAY_ID" "$NATIVE_PID"
++  exit 0
++fi
++if [[ -L "$STATE_DIR/start.lock" ]]; then
++  native_die "el bloqueo de inicio es un enlace simbólico; revísalo manualmente: $STATE_DIR/start.lock"
++fi
++if ! mkdir -- "$STATE_DIR/start.lock" 2>/dev/null; then
++  native_die "ya hay un inicio en curso o quedó un bloqueo tras un cierre abrupto: $STATE_DIR/start.lock. Revisa la sesión antes de borrarlo."
++fi
++printf '%s\n' "$$" > "$STATE_DIR/start.lock/owner"
++release_lock() {
++  if [[ ! -L "$STATE_DIR/start.lock/owner" && -f "$STATE_DIR/start.lock/owner" ]] && \
++     [[ "$(cat -- "$STATE_DIR/start.lock/owner" 2>/dev/null || true)" == "$$" ]]; then
++    rm -f -- "$STATE_DIR/start.lock/owner"
++    rmdir -- "$STATE_DIR/start.lock" 2>/dev/null || true
++  fi
++}
++trap release_lock EXIT
++trap 'exit 130' INT
++trap 'exit 143' TERM HUP
++
++# Drop stale metadata only after checking that it does not describe a live,
++# token-matching supervisor. Do not touch any other process.
++if native_read_meta "$STATE_DIR"; then
++  if kill -0 "$NATIVE_PID" 2>/dev/null && native_pid_has_token "$NATIVE_PID" "$NATIVE_TOKEN"; then
++    printf 'La sesión ya está activa (display %s, controlador PID %s).\n' "$DISPLAY_ID" "$NATIVE_PID"
++    exit 0
++  fi
++  # If Android killed the supervisor abruptly, stop only recorded children
++  # that still carry the prior session's token before launching a new display.
++  native_stop_children_for_token "$STATE_DIR" "$NATIVE_TOKEN"
++fi
++native_remove_meta "$STATE_DIR"
++
++TOKEN="native-$$-$(date +%s)-$RANDOM"
++LOG_FILE="$STATE_DIR/session.log"
++# The session supervisor writes its own PID/token and manages only the two
++# child processes it launched, which inherit this unique session token.
++nohup env "MINIOS_NATIVE_SESSION_TOKEN=$TOKEN" "$SCRIPT_DIR/session.sh" "$DISPLAY_ID" "$STATE_DIR" >> "$LOG_FILE" 2>&1 < /dev/null &
++LAUNCH_PID=$!
++
++for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
++  if native_read_meta "$STATE_DIR" && [[ "$NATIVE_PID" == "$LAUNCH_PID" && "$NATIVE_TOKEN" == "$TOKEN" ]] && \
++     native_pid_has_token "$LAUNCH_PID" "$TOKEN" && \
++     [[ -f "$STATE_DIR/session.ready" && ! -L "$STATE_DIR/session.ready" ]] && \
++     grep -Fxq -- "$TOKEN" "$STATE_DIR/session.ready"; then
++    printf 'MiniOS XFCE inició en Termux:X11 (%s). Log: %s\n' "$DISPLAY_ID" "$LOG_FILE"
++    printf 'Para detener esta sesión usa scripts/termux-native/stop.sh.\n'
++    exit 0
++  fi
++  if ! kill -0 "$LAUNCH_PID" 2>/dev/null; then
++    break
++  fi
++  sleep 1
++done
++
++if kill -0 "$LAUNCH_PID" 2>/dev/null && native_pid_has_token "$LAUNCH_PID" "$TOKEN"; then
++  native_stop_child_if_owned "$LAUNCH_PID" "$TOKEN"
++fi
++native_remove_meta_if_owner "$STATE_DIR" "$LAUNCH_PID" "$TOKEN"
++printf 'No se confirmó que XFCE arrancara. No se dejaron procesos de sesión controlados; revisa el log: %s\n' "$LOG_FILE" >&2
++exit 1
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/termux-native/stop.sh MiniOS-termux-native-local/scripts/termux-native/stop.sh
+--- a/scripts/termux-native/stop.sh	1970-01-01 00:00:00.000000000 +0000
++++ b/scripts/termux-native/stop.sh	2026-10-02 20:21:12.913378500 +0000
+@@ -0,0 +1,46 @@
++#!/usr/bin/env bash
++# Stop only the supervisor whose private PID/token metadata matches this session.
++set -Eeuo pipefail
++SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
++# shellcheck source=scripts/termux-native/common.sh
++source "$SCRIPT_DIR/common.sh"
++[[ $# -eq 0 ]] || native_die 'stop.sh no acepta argumentos.'
++native_require_termux
++STATE_DIR="$(native_state_dir)"
++
++if [[ -L "$STATE_DIR" ]]; then
++  native_die "el directorio de estado es un enlace simbólico; no se detuvo ningún proceso: $STATE_DIR"
++fi
++if [[ ! -d "$STATE_DIR" ]]; then
++  printf 'No hay una sesión MiniOS XFCE registrada.\n'
++  exit 0
++fi
++
++if ! native_read_meta "$STATE_DIR"; then
++  if [[ -L "$STATE_DIR/session.pid" || -L "$STATE_DIR/session.token" ]]; then
++    native_die 'los metadatos de sesión contienen un enlace simbólico; no se detuvo ningún proceso.'
++  fi
++  native_remove_meta "$STATE_DIR"
++  printf 'No hay una sesión MiniOS XFCE activa (se limpiaron solo metadatos regulares obsoletos).\n'
++  exit 0
++fi
++PID="$NATIVE_PID"
++TOKEN="$NATIVE_TOKEN"
++if ! kill -0 "$PID" 2>/dev/null || ! native_pid_has_token "$PID" "$TOKEN"; then
++  native_stop_children_for_token "$STATE_DIR" "$TOKEN"
++  native_remove_meta_if_owner "$STATE_DIR" "$PID" "$TOKEN"
++  printf 'La sesión ya había terminado; no se señalizó ningún otro proceso.\n'
++  exit 0
++fi
++
++kill -TERM "$PID" 2>/dev/null || true
++for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
++  if ! kill -0 "$PID" 2>/dev/null || ! native_pid_has_token "$PID" "$TOKEN"; then
++    native_remove_meta_if_owner "$STATE_DIR" "$PID" "$TOKEN"
++    printf 'Sesión MiniOS XFCE detenida; solo se solicitó terminar su supervisor identificado.\n'
++    exit 0
++  fi
++  sleep 1
++done
++printf 'El supervisor sigue activo tras SIGTERM; no se usó SIGKILL para evitar dejar hijos huérfanos. Revisa %s/session.log antes de actuar.\n' "$STATE_DIR" >&2
++exit 1
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/verify-image.sh MiniOS-termux-native-local/scripts/verify-image.sh
+--- a/scripts/verify-image.sh	2026-10-02 20:13:46.062881200 +0000
++++ b/scripts/verify-image.sh	2026-10-02 20:54:48.609713496 +0000
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env bash
++# LEGACY Debian/QEMU path; not used by the native Termux desktop.
+ set -Eeuo pipefail
+ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ IMG="${1:-$ROOT/build/os.img}"
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/scripts/verify-xfce-image.py MiniOS-termux-native-local/scripts/verify-xfce-image.py
+--- a/scripts/verify-xfce-image.py	2026-10-02 20:13:46.062881200 +0000
++++ b/scripts/verify-xfce-image.py	2026-10-02 20:54:56.341882453 +0000
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env python3
++# LEGACY Debian/QEMU image verifier; not used by native Termux.
+ """Validate the installed XFCE/LightDM configuration inside a MiniAriño rootfs."""
+ from __future__ import annotations
+ 
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/tests/test-display-mode.sh MiniOS-termux-native-local/tests/test-display-mode.sh
+--- a/tests/test-display-mode.sh	2026-10-02 20:13:46.062881200 +0000
++++ b/tests/test-display-mode.sh	2026-10-02 20:54:48.613713497 +0000
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env bash
++# LEGACY Debian/QEMU path; not used by the native Termux desktop.
+ set -Eeuo pipefail
+ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ TMP="$(mktemp -d)"
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/tests/test-run-qemu.sh MiniOS-termux-native-local/tests/test-run-qemu.sh
+--- a/tests/test-run-qemu.sh	2026-10-02 20:13:46.062881200 +0000
++++ b/tests/test-run-qemu.sh	2026-10-02 20:54:48.613713497 +0000
+@@ -1,4 +1,5 @@
+ #!/usr/bin/env bash
++# LEGACY Debian/QEMU path; not used by the native Termux desktop.
+ set -Eeuo pipefail
+ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ RUN_QEMU="$ROOT/scripts/run-qemu.sh"
+diff -ruN MiniOS-4044fd/MiniOS-4044fd0aa7836e4806e930cd6fac684c7fe46cb3/tests/test-termux-native.sh MiniOS-termux-native-local/tests/test-termux-native.sh
+--- a/tests/test-termux-native.sh	1970-01-01 00:00:00.000000000 +0000
++++ b/tests/test-termux-native.sh	2026-10-02 20:57:05.227786840 +0000
+@@ -0,0 +1,128 @@
++#!/usr/bin/env bash
++# Safe host tests. All Termux commands are isolated under a temporary fake HOME/PREFIX.
++set -Eeuo pipefail
++ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
++SCRIPTS="$ROOT/scripts/termux-native"
++TMP="$(mktemp -d)"
++trap 'rm -rf -- "$TMP"' EXIT
++
++while IFS= read -r -d '' file; do
++  bash -n "$file"
++done < <(find "$ROOT/scripts" "$ROOT/tests" -type f -name '*.sh' -print0)
++printf 'PASS: shell syntax checks\n'
++
++FAKE_HOME="$TMP/home"
++FAKE_PREFIX="$TMP/prefix"
++mkdir -p "$FAKE_HOME" "$FAKE_PREFIX/bin" "$TMP/mock-bin"
++cat > "$FAKE_PREFIX/bin/pkg" <<'EOF'
++#!/usr/bin/env sh
++printf '%s\n' "$*" >> "$PKG_CALL_LOG"
++exit 0
++EOF
++chmod +x "$FAKE_PREFIX/bin/pkg"
++export PKG_CALL_LOG="$TMP/pkg-calls.log"
++export HOME="$FAKE_HOME"
++export PATH="$TMP/mock-bin:$FAKE_PREFIX/bin:$PATH"
++
++expect_termux_refusal() {
++  local name="$1"; shift
++  local output status=0
++  output="$(TERMUX_VERSION= PREFIX="$FAKE_PREFIX" bash "$@" 2>&1)" || status=$?
++  if [[ "$status" -ne 2 || "$output" != *'solo se puede usar desde Termux'* ]]; then
++    printf 'FAIL: %s did not refuse safely (status=%s)\n%s\n' "$name" "$status" "$output" >&2
++    exit 1
++  fi
++}
++
++expect_termux_refusal 'installer check' "$SCRIPTS/install.sh" --check
++expect_termux_refusal 'installer install' "$SCRIPTS/install.sh" --install
++expect_termux_refusal 'doctor' "$SCRIPTS/doctor.sh"
++expect_termux_refusal 'start' "$SCRIPTS/start.sh"
++expect_termux_refusal 'stop' "$SCRIPTS/stop.sh"
++expect_termux_refusal 'browser handoff' "$SCRIPTS/browser.sh" https://example.org
++expect_termux_refusal 'mobile profile' "$SCRIPTS/mobile-profile.sh" --apply
++[[ ! -e "$PKG_CALL_LOG" ]]
++[[ ! -e "$FAKE_PREFIX/var/run/minios-native-xfce" ]]
++printf 'PASS: all commands reject non-Termux before package, session, or profile changes\n'
++
++# Check/status/doctor modes are read-only and leave the fake package log untouched.
++TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --check >/dev/null
++TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/mobile-profile.sh" --status >/dev/null
++[[ ! -e "$FAKE_HOME/.config" ]]
++for item in termux-x11 xfce4-session xfce4-panel dbus-launch thunar xfce4-terminal; do
++  printf '#!/usr/bin/env sh\nexit 0\n' > "$TMP/mock-bin/$item"
++  chmod +x "$TMP/mock-bin/$item"
++done
++TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/doctor.sh" >/dev/null
++[[ ! -e "$PKG_CALL_LOG" ]]
++printf 'PASS: check/status/doctor modes are read-only and never call pkg\n'
++
++# Installation cancellation must never call even the fake pkg executable.
++output="$(printf 'n\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install 2>&1)"
++[[ "$output" == *'Cancelado'* ]]
++[[ ! -e "$PKG_CALL_LOG" ]]
++printf 'PASS: installer cancellation is side-effect free\n'
++
++# Affirmative install exercises only the documented selected package calls.
++printf 'y\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/install.sh" --install >/dev/null
++[[ "$(cat "$PKG_CALL_LOG")" == $'install x11-repo\ninstall termux-x11-nightly xfce' ]]
++! grep -Eiq 'upgrade|remove|tur' "$PKG_CALL_LOG"
++printf 'PASS: explicit install calls pkg only for x11-repo and selected XFCE packages\n'
++
++# Mock the external Android browser handoff; no browser or network is run.
++cat > "$TMP/mock-bin/termux-open-url" <<'EOF'
++#!/usr/bin/env sh
++printf '%s\n' "$1" >> "$URL_CALL_LOG"
++EOF
++chmod +x "$TMP/mock-bin/termux-open-url"
++export URL_CALL_LOG="$TMP/url-calls.log"
++TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/browser.sh" https://example.org/path >/dev/null
++[[ "$(cat "$URL_CALL_LOG")" == 'https://example.org/path' ]]
++if TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/browser.sh" 'javascript:alert(1)' >/dev/null 2>&1; then
++  printf 'FAIL: browser handoff accepted a non-HTTP(S) URL\n' >&2
++  exit 1
++fi
++printf 'PASS: browser accepts only HTTP(S) and delegates to mocked Android handoff\n'
++
++# Prepare a pre-existing private profile target to prove backup and restoration.
++PANEL="$FAKE_HOME/.config/miniarino-native/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml"
++mkdir -p "$(dirname "$PANEL")"
++printf 'pre-existing-profile-setting\n' > "$PANEL"
++# Opt-in cancellation leaves that file untouched and installs no profile marker.
++output="$(printf 'n\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/mobile-profile.sh" --apply 2>&1)"
++[[ "$output" == *'Cancelado'* ]]
++[[ "$(cat "$PANEL")" == 'pre-existing-profile-setting' ]]
++[[ ! -e "$FAKE_HOME/.config/miniarino-native/profile.enabled" ]]
++
++# Apply is confirmed, writes only isolated profile assets, and creates a backup.
++output="$(printf 'y\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/mobile-profile.sh" --apply 2>&1)"
++[[ "$output" == *'Copia de seguridad:'* ]]
++[[ "$(cat "$FAKE_HOME/.config/miniarino-native/profile.enabled")" == 'mobile-v1' ]]
++grep -Fq 'MiniAriño' "$PANEL"
++grep -Fq 'miniarino-browser-handoff.desktop' "$PANEL"
++grep -Fq 'Name=MiniAriño — Terminal' "$FAKE_HOME/.local/share/miniarino-native/applications/miniarino-terminal.desktop"
++grep -Fq 'termux-open-url' "$FAKE_HOME/.local/share/miniarino-native/bin/miniarino-browser-prompt"
++[[ "$(cat "$PKG_CALL_LOG")" == $'install x11-repo\ninstall termux-x11-nightly xfce' ]]
++printf 'PASS: confirmed mobile profile is isolated, branded, touch-sized, and backed up\n'
++
++# Restore must refuse to overwrite profile files that changed after activation.
++printf '\n# post-apply user edit\n' >> "$PANEL"
++output="$(printf 'y\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/mobile-profile.sh" --restore 2>&1)" && {
++  printf 'FAIL: profile restore should reject a modified managed file\n' >&2
++  exit 1
++}
++[[ "$output" == *'no se sobreescribió'* ]]
++grep -Fq 'post-apply user edit' "$PANEL"
++
++backup="$(find "$FAKE_HOME/.local/share/miniarino-native-backups" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
++[[ -n "$backup" ]]
++cp "$backup/generated/config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml" "$PANEL"
++output="$(printf 'y\n' | TERMUX_VERSION=mock PREFIX="$FAKE_PREFIX" bash "$SCRIPTS/mobile-profile.sh" --restore 2>&1)"
++[[ "$output" == *'Perfil revertido'* ]]
++[[ "$(cat "$PANEL")" == 'pre-existing-profile-setting' ]]
++[[ ! -e "$FAKE_HOME/.config/miniarino-native/profile.enabled" ]]
++[[ ! -e "$FAKE_HOME/.local/share/miniarino-native/applications/miniarino-terminal.desktop" ]]
++[[ ! -e "$FAKE_HOME/.local/share/miniarino-native/bin/miniarino-browser-prompt" ]]
++[[ -d "$backup" ]]
++printf 'PASS: restore preserves post-apply edits by refusing conflicts and restores original files\n'
++printf 'PASS: host-safe native tests complete; no Android GUI was tested\n'

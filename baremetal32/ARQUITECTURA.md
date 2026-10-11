@@ -1,4 +1,6 @@
-# MiniAriño bare-metal x86-32 — alcance y diseño propuesto
+# Bare-metal x86-32 archivado — alcance y diseño propuesto
+
+> Experimento histórico, fuera del producto principal Termux + Termux:X11. No es la ruta de arranque ni de instalación de MiniAriño actual; conservar solo para revisión.
 
 ## Estado
 

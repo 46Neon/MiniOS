@@ -1,0 +1,35 @@
+name: Native Termux scripts (host-safe)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: miniarino-native-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host-safe-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Check shell syntax
+        run: |
+          find scripts tests -type f -name '*.sh' -print0 | while IFS= read -r -d '' file; do
+            bash -n "$file"
+          done
+
+      - name: Run safe mocked native tests
+        run: bash tests/test-termux-native.sh
+
+      - name: Confirm plain make is a non-installing help target
+        run: make

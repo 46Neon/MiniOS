@@ -1,3 +1,6 @@
+ARCHIVADO: experimento bare-metal x86-32, fuera del producto nativo Termux/XFCE.
+Este inventario se conserva para referencia; su workflow requiere ejecución manual.
+
 MiniAriño bare-metal x86 de 32 bits — inventario
 =================================================
 
